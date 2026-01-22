@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trucking Rate Request - Submit</title>
+    <title>Trucking Rate Requests - Admin Dashboard</title>
     <style>
         * {
             margin: 0;
@@ -13,38 +13,212 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
         }
 
-        .container {
-            max-width: 600px;
+        .main-container {
+            max-width: 1400px;
             margin: 0 auto;
+            display: grid;
+            grid-template-columns: 400px 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 1100px) {
+            .main-container {
+                grid-template-columns: 1fr;
+            }
         }
 
         .panel {
             background: white;
             border-radius: 12px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            padding: 30px;
-            margin-bottom: 20px;
+            padding: 25px;
         }
 
         h1 {
             color: #333;
             margin-bottom: 8px;
-            font-size: 24px;
+            font-size: 22px;
+        }
+
+        h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
         .subtitle {
             color: #666;
-            margin-bottom: 25px;
-            font-size: 13px;
+            margin-bottom: 20px;
+            font-size: 12px;
         }
 
+        /* Request Queue Styles */
+        .request-queue {
+            max-height: calc(100vh - 200px);
+            overflow-y: auto;
+        }
+
+        .request-card {
+            background: #f8f9fa;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .request-card:hover {
+            border-color: #667eea;
+            background: #f0f0ff;
+        }
+
+        .request-card.selected {
+            border-color: #667eea;
+            background: #e8edff;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+        }
+
+        .request-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 8px;
+        }
+
+        .request-route {
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .request-urgency {
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .request-urgency.normal {
+            background: #e0e0e0;
+            color: #666;
+        }
+
+        .request-urgency.urgent {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .request-urgency.rush {
+            background: #f8d7da;
+            color: #721c24;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .request-meta {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 6px;
+        }
+
+        .request-details {
+            font-size: 12px;
+            color: #555;
+            background: white;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 8px;
+        }
+
+        .request-suggested {
+            font-size: 11px;
+            color: #667eea;
+            margin-top: 6px;
+        }
+
+        .request-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 11px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .btn-load {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-load:hover {
+            background: #5568d3;
+        }
+
+        .btn-delete {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-delete:hover {
+            background: #c82333;
+        }
+
+        .empty-queue {
+            text-align: center;
+            padding: 40px 20px;
+            color: #888;
+        }
+
+        .empty-queue-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .queue-count {
+            background: #667eea;
+            color: white;
+            padding: 3px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+
+        .refresh-btn {
+            background: #f0f0f0;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: auto;
+        }
+
+        .refresh-btn:hover {
+            background: #e0e0e0;
+        }
+
+        /* Email Generator Panel */
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 18px;
         }
 
         label {
@@ -61,12 +235,7 @@
             font-size: 11px;
         }
 
-        .required::after {
-            content: " *";
-            color: #dc3545;
-        }
-
-        select, input[type="text"], input[type="email"], textarea {
+        select, input[type="text"], textarea {
             width: 100%;
             padding: 10px 12px;
             border: 2px solid #e0e0e0;
@@ -76,75 +245,26 @@
             font-family: inherit;
         }
 
-        select:focus, input[type="text"]:focus, input[type="email"]:focus, textarea:focus {
+        select:focus, input[type="text"]:focus, textarea:focus {
             outline: none;
-            border-color: #4facfe;
+            border-color: #667eea;
         }
 
         textarea {
             resize: vertical;
-            min-height: 80px;
+            min-height: 60px;
         }
 
-        .urgency-options {
-            display: flex;
-            gap: 10px;
-        }
-
-        .urgency-option {
-            flex: 1;
-            padding: 12px;
+        /* Contacts List */
+        .contacts-container {
             border: 2px solid #e0e0e0;
             border-radius: 6px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .urgency-option:hover {
-            border-color: #4facfe;
-        }
-
-        .urgency-option.selected {
-            border-color: #4facfe;
-            background: #e8f4ff;
-        }
-
-        .urgency-option.urgent.selected {
-            border-color: #ffc107;
-            background: #fff8e1;
-        }
-
-        .urgency-option.rush.selected {
-            border-color: #dc3545;
-            background: #ffebee;
-        }
-
-        .urgency-option input {
-            display: none;
-        }
-
-        .urgency-label {
-            font-weight: 600;
-            font-size: 13px;
-        }
-
-        .urgency-desc {
-            font-size: 11px;
-            color: #888;
-            margin-top: 4px;
-        }
-
-        /* Vendor suggestions */
-        .vendors-container {
-            border: 2px solid #e0e0e0;
-            border-radius: 6px;
-            max-height: 200px;
+            max-height: 280px;
             overflow-y: auto;
             background: #fafafa;
         }
 
-        .vendor-item {
+        .contact-item {
             padding: 10px 12px;
             border-bottom: 1px solid #eee;
             display: flex;
@@ -154,48 +274,100 @@
             transition: background 0.2s;
         }
 
-        .vendor-item:hover {
-            background: #e8f4ff;
+        .contact-item:hover {
+            background: #f0f0ff;
         }
 
-        .vendor-item:last-child {
+        .contact-item.suggested {
+            background: #e8f5e9;
+        }
+
+        .contact-item.suggested:hover {
+            background: #c8e6c9;
+        }
+
+        .contact-item:last-child {
             border-bottom: none;
         }
 
-        .vendor-item input[type="checkbox"] {
+        .contact-item input[type="checkbox"] {
             width: 16px;
             height: 16px;
             cursor: pointer;
         }
 
-        .vendor-name {
-            font-size: 13px;
-            color: #333;
+        .contact-info {
+            flex: 1;
         }
 
-        .no-vendors {
+        .contact-company {
+            font-weight: 600;
+            color: #333;
+            font-size: 13px;
+        }
+
+        .contact-email {
+            color: #666;
+            font-size: 11px;
+        }
+
+        .contact-suggested-badge {
+            background: #28a745;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 9px;
+            font-weight: 600;
+        }
+
+        .no-contacts {
             padding: 20px;
             text-align: center;
             color: #888;
             font-style: italic;
-            font-size: 13px;
+        }
+
+        .select-all-row {
+            padding: 8px 12px;
+            background: #667eea;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .select-all-row input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
         }
 
         .selected-count {
             font-size: 12px;
-            color: #4facfe;
+            color: #667eea;
             margin-top: 6px;
         }
 
+        .default-cc {
+            background: #e8f4fd;
+            color: #1a5f7a;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            margin-top: 6px;
+        }
+
+        /* Buttons */
         .button-group {
             display: flex;
             gap: 10px;
-            margin-top: 25px;
+            margin-top: 20px;
         }
 
         button {
             flex: 1;
-            padding: 14px 20px;
+            padding: 12px 16px;
             border: none;
             border-radius: 6px;
             font-size: 14px;
@@ -205,14 +377,14 @@
         }
 
         .btn-primary {
-            background: #4facfe;
+            background: #667eea;
             color: white;
         }
 
         .btn-primary:hover:not(:disabled) {
-            background: #3d9be8;
+            background: #5568d3;
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(79, 172, 254, 0.4);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
         }
 
         .btn-secondary {
@@ -224,266 +396,227 @@
             background: #e0e0e0;
         }
 
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover:not(:disabled) {
+            background: #218838;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(40, 167, 69, 0.4);
+        }
+
         button:disabled {
             background: #ccc;
             cursor: not-allowed;
             transform: none;
         }
 
+        /* Batch Queue */
+        .batch-queue {
+            margin-top: 20px;
+            border-top: 2px solid #e0e0e0;
+            padding-top: 20px;
+        }
+
+        .batch-item {
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .batch-item-info {
+            flex: 1;
+        }
+
+        .batch-item-route {
+            font-weight: 600;
+            font-size: 13px;
+            color: #333;
+        }
+
+        .batch-item-contacts {
+            font-size: 11px;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .batch-count {
+            background: #667eea;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+
+        .email-count {
+            background: #28a745;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            margin-left: 8px;
+        }
+
         .success-message {
             background: #d4edda;
             color: #155724;
-            padding: 15px;
+            padding: 12px;
             border-radius: 6px;
+            margin-top: 15px;
             text-align: center;
             display: none;
-            margin-bottom: 20px;
         }
 
         .success-message.show {
             display: block;
         }
 
-        .error-message {
-            background: #f8d7da;
-            color: #721c24;
-            padding: 15px;
-            border-radius: 6px;
-            text-align: center;
-            display: none;
-            margin-bottom: 20px;
-        }
-
-        .error-message.show {
-            display: block;
-        }
-
-        /* My Requests Section */
-        .my-requests {
-            margin-top: 20px;
-        }
-
-        h2 {
-            color: #333;
-            font-size: 18px;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .request-count {
-            background: #4facfe;
+        /* Admin badge */
+        .admin-badge {
+            background: #764ba2;
             color: white;
-            padding: 2px 10px;
-            border-radius: 12px;
-            font-size: 12px;
-        }
-
-        .request-item {
-            background: #f8f9fa;
-            border: 1px solid #e0e0e0;
-            border-radius: 6px;
-            padding: 12px;
-            margin-bottom: 10px;
-        }
-
-        .request-route {
-            font-weight: 600;
-            color: #333;
-            font-size: 14px;
-        }
-
-        .request-meta {
-            font-size: 12px;
-            color: #666;
-            margin-top: 4px;
-        }
-
-        .request-urgency {
-            display: inline-block;
-            padding: 2px 8px;
+            padding: 4px 12px;
             border-radius: 4px;
             font-size: 11px;
             font-weight: 600;
-            margin-left: 8px;
+            margin-left: 10px;
         }
 
-        .request-urgency.normal {
-            background: #e0e0e0;
-            color: #666;
-        }
-
-        .request-urgency.urgent {
+        .loaded-from {
             background: #fff3cd;
             color: #856404;
+            padding: 10px 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 12px;
+            display: none;
         }
 
-        .request-urgency.rush {
-            background: #f8d7da;
-            color: #721c24;
+        .loaded-from.show {
+            display: block;
         }
 
-        .empty-requests {
-            text-align: center;
-            color: #888;
-            font-style: italic;
-            padding: 20px;
+        .loaded-from strong {
+            display: block;
+            margin-bottom: 4px;
         }
 
         .info-box {
-            background: #e8f4ff;
-            border-left: 4px solid #4facfe;
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
             padding: 12px;
             margin-top: 20px;
             border-radius: 4px;
         }
 
         .info-box p {
-            color: #333;
+            color: #666;
             font-size: 12px;
             line-height: 1.5;
-        }
-
-        .submitter-section {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 6px;
-            margin-bottom: 20px;
-        }
-
-        .submitter-section label {
-            margin-bottom: 8px;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 20px;
-            color: #666;
-        }
-
-        .spinner {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #4facfe;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-right: 10px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .setup-notice {
-            background: #fff3cd;
-            border: 1px solid #ffc107;
-            border-radius: 6px;
-            padding: 15px;
-            margin-bottom: 20px;
-            font-size: 13px;
-        }
-
-        .setup-notice strong {
-            color: #856404;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div id="setupNotice" class="setup-notice" style="display: none;">
-            <strong>⚠️ Setup Required:</strong> JSONBin is not configured. Data will only be saved locally in this browser.
-            <br><small>See SETUP-INSTRUCTIONS.md to enable cloud sync.</small>
-        </div>
-
-        <div id="successMessage" class="success-message">
-            ✓ Your request has been submitted successfully!
-        </div>
-        <div id="errorMessage" class="error-message">
-            ✕ Error submitting request. Please try again.
-        </div>
-
+    <div class="main-container">
+        <!-- Left Panel: Request Queue -->
         <div class="panel">
-            <h1>🚛 Trucking Rate Request</h1>
-            <p class="subtitle">Submit a request for drayage rate quotes</p>
-
-            <div class="submitter-section">
-                <label for="submitterName" class="required">Your Name</label>
-                <input type="text" id="submitterName" placeholder="Enter your name" required>
+            <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                <h2 style="margin-bottom: 0;">
+                    📥 Request Queue
+                    <span class="queue-count" id="queueCount">0</span>
+                </h2>
+                <button class="refresh-btn" onclick="loadRequests()">🔄 Refresh</button>
             </div>
 
-            <form id="requestForm">
+            <div class="request-queue" id="requestQueue">
+                <div class="empty-queue">
+                    <div class="empty-queue-icon">📭</div>
+                    <p>No pending requests</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel: Email Generator -->
+        <div class="panel">
+            <h1>📧 Drayage Email Generator <span class="admin-badge">ADMIN</span></h1>
+            <p class="subtitle">Process rate requests and generate vendor emails</p>
+
+            <div class="loaded-from" id="loadedFrom">
+                <strong>📋 Loaded from request:</strong>
+                <span id="loadedFromText"></span>
+            </div>
+
+            <form id="emailForm">
                 <div class="form-group">
-                    <label for="origin" class="required">Origin Location</label>
-                    <select id="origin" required>
+                    <label for="origin">Origin Location:</label>
+                    <select id="origin" name="origin" required>
                         <option value="">-- Select Origin --</option>
                     </select>
                 </div>
 
                 <div class="form-group">
-                    <label for="destination" class="required">Destination Location</label>
-                    <input type="text" id="destination" placeholder="e.g., Chicago, IL" required>
+                    <label for="destination">Destination Location:</label>
+                    <input type="text" id="destination" name="destination" placeholder="e.g., Chicago, IL" required>
                 </div>
 
                 <div class="form-group">
-                    <label>Priority Level</label>
-                    <div class="urgency-options">
-                        <label class="urgency-option selected" data-value="normal">
-                            <input type="radio" name="urgency" value="normal" checked>
-                            <div class="urgency-label">Normal</div>
-                            <div class="urgency-desc">Standard timing</div>
-                        </label>
-                        <label class="urgency-option urgent" data-value="urgent">
-                            <input type="radio" name="urgency" value="urgent">
-                            <div class="urgency-label">Urgent</div>
-                            <div class="urgency-desc">Need soon</div>
-                        </label>
-                        <label class="urgency-option rush" data-value="rush">
-                            <input type="radio" name="urgency" value="rush">
-                            <div class="urgency-label">Rush</div>
-                            <div class="urgency-desc">ASAP</div>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label for="additionalDetails">Additional Details <span class="label-hint">(optional)</span></label>
-                    <textarea id="additionalDetails" placeholder="e.g., Container size, special requirements, timeline..."></textarea>
-                </div>
-
-                <div class="form-group">
-                    <label for="additionalCC">Additional CC Emails <span class="label-hint">(optional)</span></label>
-                    <input type="text" id="additionalCC" placeholder="e.g., john@example.com, jane@example.com">
-                </div>
-
-                <div class="form-group">
-                    <label>Suggest Vendors <span class="label-hint">(optional - procurement will make final selection)</span></label>
-                    <div class="vendors-container" id="vendorsContainer">
-                        <div class="no-vendors">Select an origin to see available vendors</div>
+                    <label>Select Contacts: <span class="label-hint">(choose who to email)</span></label>
+                    <div class="contacts-container" id="contactsContainer">
+                        <div class="no-contacts">Select an origin to see available contacts</div>
                     </div>
                     <div class="selected-count" id="selectedCount"></div>
                 </div>
 
+                <div class="form-group">
+                    <label for="additionalCC">Additional CC: <span class="label-hint">(optional)</span></label>
+                    <input type="text" id="additionalCC" name="additionalCC" placeholder="e.g., john@example.com, jane@example.com">
+                    <div class="default-cc">✔ Default CC on all emails: US.KApex.FCL.Trucking@KLN.COM</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="additionalDetails">Additional Details: <span class="label-hint">(optional)</span></label>
+                    <textarea id="additionalDetails" name="additionalDetails" placeholder="e.g., Container size, special requirements"></textarea>
+                </div>
+
                 <div class="button-group">
-                    <button type="submit" class="btn-primary" id="submitBtn">📤 Submit Request</button>
+                    <button type="submit" class="btn-primary" id="addToBatchBtn">➕ Add to Batch</button>
                     <button type="button" class="btn-secondary" onclick="clearForm()">Clear</button>
                 </div>
             </form>
 
-            <div class="info-box">
-                <p><strong>What happens next?</strong><br>
-                Your request will be reviewed by the procurement team who will reach out to vendors for quotes. You'll receive responses via email.</p>
-            </div>
-        </div>
+            <!-- Batch Queue -->
+            <div class="batch-queue">
+                <h2>
+                    📋 Email Batch
+                    <span class="batch-count" id="batchCount">0</span>
+                    <span class="email-count" id="emailCount">0 emails</span>
+                </h2>
 
-        <!-- My Requests Section -->
-        <div class="panel my-requests">
-            <h2>📋 My Requests <span class="request-count" id="requestCount">0</span></h2>
-            <div id="myRequestsList">
-                <div class="loading"><span class="spinner"></span>Loading your requests...</div>
+                <div id="batchQueue">
+                    <div class="empty-queue" style="padding: 20px;">No emails in batch yet.</div>
+                </div>
+
+                <div class="button-group">
+                    <button type="button" class="btn-success" id="generateAllBtn" onclick="generateAllEmails()" disabled>
+                        🚀 Generate All Emails
+                    </button>
+                    <button type="button" class="btn-secondary" onclick="clearBatch()">Clear Batch</button>
+                </div>
+
+                <div id="successMessage" class="success-message">
+                    ✔ Opening email drafts in Outlook...
+                </div>
+            </div>
+
+            <div class="info-box">
+                <p><strong>Workflow:</strong> Click a request from the queue to load it → Select vendors → Add to batch → Generate emails → Delete processed request</p>
             </div>
         </div>
     </div>
@@ -499,25 +632,19 @@
         // Check if JSONBin is configured
         const isJsonBinConfigured = JSONBIN_BIN_ID !== 'YOUR_BIN_ID_HERE' && JSONBIN_API_KEY !== 'YOUR_API_KEY_HERE';
 
-        // Contact/Vendor data by terminal (company names only for ops view)
+        // Contact data by terminal (full data for admin)
         const contactData = {"Savannah, GA": [{"company": "AGX Freight Intermodal", "email": "RateRequests@securetransportstorage.com", "contact": "Tara Bilyeu"}, {"company": "Allegiant Intermodal (Evans)", "email": "MJA@ALLEGIANTINTERMODAL.COM", "contact": "GROUP"}, {"company": "ATS - SaltWater Logistics", "email": "dispatch@saltwaterlogistics.com", "contact": "Rob"}, {"company": "GSC National Transportation, Inc.", "email": "imiller@gogsc.com", "contact": "Israel Miller"}, {"company": "LCG Freight Inc", "email": "t.wilson@lcgfreight.com", "contact": "Tyler Wilson"}, {"company": "LCG Freight Inc", "email": "salesGroup@lcgfreight.com", "contact": "Tyler Wilson"}, {"company": "Southern Cartage", "email": "sales@southerncompanies.net", "contact": "Danielys (Dani)"}, {"company": "TCW, Inc", "email": "lconnell@tcwonline.com", "contact": "Luke Connell"}, {"company": "Triumph Intermodal Co Inc.", "email": "dispatch@triumph-sav.com", "contact": "(group email)"}, {"company": "Container Port Group", "email": "Quote@Containerport.com", "contact": "Quote Team"}], "Chicago, IL": [{"company": "All Points Transport", "email": "ail@allpointstransport.com", "contact": "Dan Leone"}, {"company": "GDX Inc.", "email": "dispatchteam@gdxinc.com", "contact": "David Guzman"}, {"company": "PB Industries", "email": "rate@pbindustries.com", "contact": "Heejin Kim"}, {"company": "United Intermodal Carriers, Inc.", "email": "CS@UICARRIER.COM", "contact": "CUSTOMER SERVICE"}, {"company": "Unix Intermodal Inc", "email": "anas.saleh@unixintermodal.com", "contact": "Anas Saleh"}, {"company": "Rush Intermodal", "email": "neworders@rushintermodal.com", "contact": "Various"}, {"company": "Gulf Winds International", "email": "Pricing@gwii.com", "contact": "Pricing"}, {"company": "NFI Industries", "email": "pricing@calcartage.com", "contact": "Pricing"}, {"company": "Museful Trucking Co.", "email": "rate@musefulco.com", "contact": "Jacob Yang/Annie Park"}], "St.Louis, MO": [{"company": "All Points Transport", "email": "RWA@allpointstransport.com", "contact": "Sara Garrison"}, {"company": "Avenue Logistics", "email": "drayrates@avenuelogistics.com", "contact": ""}, {"company": "Horizon Freight System", "email": "StLouis@HorizonFreightSystem.com", "contact": "Dawn / Chris"}, {"company": "ITS Logistics LLC", "email": "KerryApex-IM@its4logistics.com; cbourns@its4logistics.com", "contact": "Team Distribution List // Cameron Bourns"}, {"company": "HLI GOVERNMENT SERVICES", "email": "Jenna.Carprue@solveralogistics.com", "contact": "Jenna Carprue"}], "Tampa, FL": [{"company": "AMERICA 1", "email": "JOHN@AMERICA1TAMPA.COM", "contact": "JOHN REDDERSON"}, {"company": "American Marine Express (AMX - TAMPA)", "email": "Centralflacs@amxtrans.com", "contact": "Emileigh Gilgen"}, {"company": "Cargomatic", "email": "yyin@cargomatic.com", "contact": "Yubin Yin"}, {"company": "Southern Cartage", "email": "sales@southerncompanies.net", "contact": "Danielys (Dani)"}, {"company": "TRX Inc.", "email": "tampa@trxtrucking.com", "contact": "Mary Lobdell"}, {"company": "Universal Intermodal Services, Inc.", "email": "intermodalpricing@universalintermodal.com", "contact": "Pricing Team"}], "Jacksonville, FL": [{"company": "American Marine Express (AMX - JAX)", "email": "Jaxcs@amxtrans.com", "contact": "Andrew Alba"}, {"company": "HORIZON SOUTH - JACKSONVILLE", "email": "JACKSONVILLE@HORIZONFREIGHTSYSTEM.COM", "contact": "SUSAN BERNARDING"}, {"company": "LCG Freight Inc", "email": "t.wilson@lcgfreight.com", "contact": "Tyler Wilson"}, {"company": "LCG Freight Inc", "email": "salesGroup@lcgfreight.com", "contact": "Tyler Wilson"}, {"company": "Port City Transportation", "email": "jax-dispatch@portcitytrans.com", "contact": "Russ Lewis/Brian Ray"}, {"company": "Southern Cartage", "email": "sales@southerncompanies.net", "contact": "Danielys (Dani)"}, {"company": "Container Port Group", "email": "Quote@Containerport.com", "contact": "Quote"}], "Miami/ Port Everglades": [{"company": "American Marine Express (AMX - MIAMI)", "email": "MIACS@amxtrans.com", "contact": "Ismael Escoto"}, {"company": "Delta Trucking", "email": "local-ops@delta-trucking.com", "contact": "Operations"}, {"company": "Eastern Drayage", "email": "troyd@easterndrayage.com", "contact": "Troy Deocharran"}, {"company": "Inland Express", "email": "robert.rullo@inlandexpress.net", "contact": "Robert Rullo"}, {"company": "QUALITY CONTAINER TRANSPORT", "email": "pricing@qualityct.com", "contact": "Luis M Sardinas"}, {"company": "Southern Cartage", "email": "sales@southerncompanies.net", "contact": "Danielys (Dani)"}], "Seattle, WA": [{"company": "Apex Freight LLC", "email": "greg.hudgens@apexfreghtwa.com", "contact": "Greg Hudgens"}, {"company": "Avenue Logistics", "email": "drayrates@avenuelogistics.com", "contact": ""}, {"company": "Forrest Logistics", "email": "spotquote@forrestlogistics.com", "contact": "Pricing Team"}, {"company": "Jet City trucking", "email": "bini@jetcitytrucking.com2063910529", "contact": "Biniam Habte"}, {"company": "KTI", "email": "ben.v@ktitrans.com", "contact": "Ben Vanthournout"}, {"company": "MEDLOG", "email": "us045-ck.pricing@medlog.com", "contact": "group"}, {"company": "PNW Brokerage Inc", "email": "rates@pnwbrokerage.com", "contact": "Sergey"}, {"company": "Spirit Transport", "email": "Rates@Spirittransport.net", "contact": "Rates"}, {"company": "tCamelot", "email": "ops@tcamelot.com", "contact": "Operations"}, {"company": "AKR LOGISTICS LLC", "email": "akrlogisticsllc@gmail.com", "contact": "RAMAN HUNDAL"}, {"company": "Portland Container Repair", "email": "rates@pdxcontainer.com", "contact": ""}], "Tacoma, WA": [{"company": "Apex Freight LLC", "email": "greg.hudgens@apexfreghtwa.com", "contact": "Greg Hudgens"}, {"company": "Avenue Logistics", "email": "drayrates@avenuelogistics.com", "contact": ""}, {"company": "Forrest Logistics", "email": "spotquote@forrestlogistics.com", "contact": "Pricing Team"}, {"company": "Jet City trucking", "email": "bini@jetcitytrucking.com2063910529", "contact": "Biniam Habte"}, {"company": "PNW Brokerage Inc", "email": "rates@pnwbrokerage.com", "contact": "Sergey"}, {"company": "Spirit Transport", "email": "Rates@Spirittransport.net", "contact": "Rates"}, {"company": "tCamelot", "email": "ops@tcamelot.com", "contact": "Operations"}, {"company": "AKR LOGISTICS LLC", "email": "akrlogisticsllc@gmail.com", "contact": "RAMAN HUNDAL"}, {"company": "Portland Container Repair", "email": "rates@pdxcontainer.com", "contact": ""}], "Atlanta, GA": [{"company": "ARL  Transport", "email": "dispatch@arlnetwork.com", "contact": "SPOC Team"}, {"company": "Eastern Drayage", "email": "troyd@easterndrayage.com", "contact": "Troy Deocharran"}, {"company": "FORREST LOGISTICS", "email": "SPOTQUOTE@FORRESTLOGISTICS.COM", "contact": "TANYA & JAMELA"}, {"company": "Genesis Intermodal Services", "email": "george@genesisintermodal.com", "contact": "George Albritton"}, {"company": "Lightning Transportation Inc", "email": "rates@lightningtrans.com", "contact": "Rate Department"}, {"company": "New Age Logistics", "email": "elizabethm@newagelogistics.com", "contact": "Liz Murphy"}, {"company": "PBI", "email": "rate@pbindustries.com", "contact": "Heejin Kim"}, {"company": "Veterans Express,", "email": "VAG@VETXP.COM", "contact": "VAG@VETXP.COM"}, {"company": "Container Port Group", "email": "Quote@Containerport.com", "contact": "Quote Team"}], "Miami, FL": [{"company": "ARL  Transport", "email": "dispatch@arlnetwork.com", "contact": "SPOC Team"}], "El Paso, TX": [{"company": "Arrive Logistics", "email": "aabrego@arrivelogistics.com", "contact": "Aaron Abrego"}, {"company": "Avenue Logistics", "email": "drayrates@avenuelogistics.com", "contact": ""}, {"company": "Cargomatic", "email": "yyin@cargomatic.com", "contact": "Yubin Yin"}, {"company": "Trucking 2000", "email": "mayw@trucking2000.com; sales@trucking2000.com", "contact": "May"}, {"company": "WW Rowland Trucking Co", "email": "quote@wwrowland.com", "contact": "Mike Miller"}], "Mobile, AL": [{"company": "Avenue Logistics", "email": "drayrates@avenuelogistics.com", "contact": ""}, {"company": "C&K Trucking LLC  D/B/A Medlog Trucking", "email": "us045-ck.pricing@medlog.com", "contact": "group"}, {"company": "Easy Haul Intermodal", "email": "jwalker@ehintermodal.com", "contact": "Jimmy Walker"}, {"company": "Gulf Winds International", "email": "Pricing@gwii.com", "contact": "Pricing"}, {"company": "NFI Industries", "email": "pricing@calcartage.com", "contact": "Pricing"}, {"company": "Southern Intermodal Xpress, LLC ( SIX )", "email": "ramos@sixllc.net", "contact": "Ralph Amos"}, {"company": "TCW, Inc", "email": "lconnell@tcwonline.com", "contact": "Luke Connell"}, {"company": "Container Port Group", "email": "Quote@Containerport.com", "contact": "Quote Team"}], "Kansas City": [{"company": "C&K trucking", "email": "us045-ck.pricing@medlog.com", "contact": "Pricing group"}, {"company": "Kansas City Intermodal", "email": "rates@kcintermodal.com; dispatch@kcintermodal.com; sam@kcintermodal.com", "contact": "Sam"}, {"company": "MEDLOG", "email": "us045-ck.pricing@medlog.com", "contact": "Pricing group"}, {"company": "Horizon Freight System", "email": "kansascitydispatch@hznfinc.com", "contact": "David"}, {"company": "MARK-IT EXPRESS", "email": "kcrates@mark-itexpress.com", "contact": "Matt Belanus"}, {"company": "Calhoun Truck Lines", "email": "sales@calhountrucklines.com", "contact": "Kim Schwartz/Alex Doherty"}, {"company": "ITS Logistics LLC", "email": "KerryApex-IM@its4logistics.com; cbourns@its4logistics.com", "contact": "Team Distribution List // Cameron Bourns"}, {"company": "Mike & Joy Transportation /dba M&J Transporation INC", "email": "david.s@mjtranskc.com", "contact": "David Stuccker"}], "Cleveland, OH": [{"company": "C&K trucking", "email": "us045-ck.pricing@medlog.com", "contact": "Pricing group"}, {"company": "ARL Transport", "email": "dispatch@arlcleveland.com", "contact": "Kelly"}, {"company": "MEDLOG", "email": "us045-ck.pricing@medlog.com", "contact": "Pricing group"}, {"company": "AMX", "email": "cs@amxtrans.com", "contact": "Customer Service"}, {"company": "Horizon Freight System", "email": "CLEVELANDOPS@HZNFINC.COM", "contact": "DREAMA/SARA"}, {"company": "ITS Logistics LLC", "email": "KerryApex-IM@its4logistics.com; cbourns@its4logistics.com", "contact": "Team Distribution List // Cameron Bourns"}, {"company": "HLI GOVERNMENT SERVICES", "email": "Jenna.Carprue@solveralogistics.com", "contact": "Jenna Carprue"}], "Columbus, OH": [{"company": "C&K trucking", "email": "us045-ck.pricing@medlog.com", "contact": "Pricing group"}, {"company": "MEDLOG", "email": "us045-ck.pricing@medlog.com", "contact": "Pricing group"}, {"company": "Calhoun Truck Lines", "email": "sales@calhountrucklines.com", "contact": "Kim Schwartz/Khyrstyna Dymarchuk"}, {"company": "ITS Logistics LLC", "email": "KerryApex-IM@its4logistics.com; cbourns@its4logistics.com", "contact": "Team Distribution List // Cameron Bourns"}, {"company": "HLI GOVERNMENT SERVICES", "email": "Jenna.Carprue@solveralogistics.com", "contact": "Jenna Carprue"}], "Detroit, MI": [{"company": "C&K trucking", "email": "us045-ck.pricing@medlog.com", "contact": "Pricing group"}, {"company": "Soar Transport Group", "email": "topocean@soartransport.com", "contact": "Group Email"}, {"company": "MEDLOG", "email": "us045-ck.pricing@medlog.com", "contact": "Pricing group"}, {"company": "AMX", "email": "detcs@amxtrans.com", "contact": ""}, {"company": "ITS Logistics LLC", "email": "KerryApex-IM@its4logistics.com; cbourns@its4logistics.com", "contact": "Team Distribution List // Cameron Bourns"}, {"company": "HLI GOVERNMENT SERVICES", "email": "Jenna.Carprue@solveralogistics.com", "contact": "Jenna Carprue"}], "Indianapolis, IN": [{"company": "C&K trucking", "email": "us045-ck.pricing@medlog.com", "contact": "Pricing group"}, {"company": "Harbor Bridge Intermodal", "email": "dispatch@harborbridge.org", "contact": ""}, {"company": "MEDLOG", "email": "us045-ck.pricing@medlog.com", "contact": "Pricing group"}, {"company": "Horizon Freight System", "email": "indycs@rykilogistics.com", "contact": "Justin Bilbee & Rhonda Ferguson"}, {"company": "AMX", "email": "indycs@amxtrans.com", "contact": "Customer Service"}, {"company": "Avenue Logistics", "email": "drayrates@avenuelogistics.com", "contact": ""}, {"company": "Horizon Freight System", "email": "indycs@rykilogistics.com", "contact": "Justin Bilbee & Rhonda Ferguson"}, {"company": "ITS Logistics LLC", "email": "KerryApex-IM@its4logistics.com; cbourns@its4logistics.com", "contact": "Team Distribution List // Cameron Bourns"}], "New Orleans, LA": [{"company": "C&K Trucking LLC  D/B/A Medlog Trucking", "email": "us045-ck.pricing@medlog.com", "contact": "group"}, {"company": "Cargomatic", "email": "yyin@cargomatic.com", "contact": "Yubin Yin"}, {"company": "Eastern Drayage", "email": "troyd@easterndrayage.com", "contact": "Troy Deocharran"}, {"company": "Southern Intermodal Xpress, LLC ( SIX )", "email": "ramos@sixllc.net", "contact": "Ralph Amos"}, {"company": "TCW, Inc", "email": "lconnell@tcwonline.com", "contact": "Luke Connell"}, {"company": "TFWW (TForce Worldwide)", "email": "TopOcean@tfwwi.com", "contact": "Account Operations"}, {"company": "Container Port Group", "email": "Quote@Containerport.com", "contact": "Quote Team"}], "Dallas, TX": [{"company": "C&K Trucking LLC  D/B/A Medlog Trucking", "email": "us045-ck.pricing@medlog.com", "contact": "group"}, {"company": "Cargomatic", "email": "yyin@cargomatic.com", "contact": "Yubin Yin"}, {"company": "Eagle Systems Inc", "email": "eagledallas@eaglegroup.com", "contact": "Dallas Team"}, {"company": "Elite One Intermodal", "email": "Dallas@dfttx.com", "contact": "Team"}, {"company": "Genesis Intermodal Services", "email": "sales@genesisintermodal.com", "contact": "George Albritton and Zach Bayer"}, {"company": "Gulf Winds International", "email": "Pricing@gwii.com", "contact": "Pricing"}, {"company": "RoadOne IntermodaLogisitcs", "email": "lcabrera@roadone.com", "contact": "Larry Cabrera"}, {"company": "Sunburst Truck Lines", "email": "bleffert@sunburstusa.com", "contact": "Brittney Leffert"}, {"company": "Trucking 2000", "email": "mayw@trucking2000.com; sales@trucking2000.com", "contact": "May"}, {"company": "WW Rowland Trucking Co", "email": "quote@wwrowland.com; dispatch.dfw@wwrowland.com", "contact": "Mike Miller"}, {"company": "Container Port Group", "email": "Quote@Containerport.com", "contact": "Quote Team"}, {"company": "Horizon Freight System", "email": "Dallas@dfttx.com", "contact": "Team"}], "Norfolk, VA": [{"company": "Cargomatic", "email": "yyin@cargomatic.com", "contact": "Yubin Yin"}, {"company": "Devine Logistics", "email": "Cneal@devinelogisticsllc.com", "contact": "Carter Neal"}, {"company": "Devine Logistics", "email": "Mhaight@devinelogisticsllc.com", "contact": "Matt Haight"}, {"company": "Devine Logistics", "email": "Awade@devinelogisticsllc.com", "contact": "Andrew Wade"}, {"company": "GTL Transport Co.", "email": "swheeler@gtltransport.com", "contact": "Steve Wheeler"}, {"company": "LCG Freight Inc", "email": "t.wilson@lcgfreight.com", "contact": "Tyler Wilson"}, {"company": "LCG Freight Inc", "email": "salesGroup@lcgfreight.com", "contact": "Tyler Wilson"}, {"company": "Lightning Transportation Inc", "email": "rates@lightningtrans.com", "contact": "Rate Department"}, {"company": "Service Transfer Inc.", "email": "dwayne@servicetransfer.net", "contact": "Dwayne Paschall"}, {"company": "Container Port Group", "email": "Quote@Containerport.com", "contact": "Quote"}], "Wilmington, NC": [{"company": "Cargomatic", "email": "yyin@cargomatic.com", "contact": "Yubin Yin"}, {"company": "Dunavant", "email": "robert.clawson@dunavant.com", "contact": "Robert Clawson"}, {"company": "FORREST LOGISTICS", "email": "SPOTQUOTE@FORRESTLOGISTICS.COM", "contact": "TANYA & JAMELA"}, {"company": "Horizon (TRX Inc.)", "email": "igooch@rykilogistics.com", "contact": "IESHA GOOCH"}, {"company": "NFI Industries", "email": "pricing@calcartage.com", "contact": ""}, {"company": "Port City Transportation", "email": "jedwards@portcitytrans.com", "contact": "Jonathan Edwards"}, {"company": "Veterans Express", "email": "VWN@VETXP.COM", "contact": "VWN@VETXP.COM"}], "Houston, TX": [{"company": "Cargomatic", "email": "yyin@cargomatic.com", "contact": "Yubin Yin"}, {"company": "CRL TRUCKING LLC", "email": "carlos@crltrucking.com", "contact": "Carlos Linares"}, {"company": "Dunavant Trans Gulf Transportation LLC", "email": "laportesales@dunavant.com", "contact": "Greg Almaguer"}, {"company": "Gulf Winds International", "email": "Pricing@gwii.com", "contact": "Pricing"}, {"company": "LCG Freight", "email": "t.wilson@lcgfreight.com", "contact": "Tyler"}, {"company": "Sunburst Truck Lines", "email": "bleffert@sunburstusa.com", "contact": "Brittney Leffert"}, {"company": "Trucking 2000", "email": "mayw@trucking2000.com; sales@trucking2000.com", "contact": "May"}, {"company": "Container Port Group", "email": "Quote@Containerport.com", "contact": "Quote Team"}], "Denver, CO": [{"company": "Cargomatic", "email": "yyin@cargomatic.com", "contact": "Yubin Yin"}, {"company": "KTI", "email": "ben.v@ktitrans.com", "contact": "Ben Vanthournout"}, {"company": "Horizon Freight System", "email": "Denver@HorizonFreightSystem.com", "contact": "DayDay Hayes / William Buboltz / Nick Figgins"}, {"company": "Suntecktts", "email": "kln@suntecktts.com", "contact": "Yesica / Donald"}], "Salt Lake City, UT": [{"company": "Cargomatic", "email": "yyin@cargomatic.com", "contact": "Yubin Yin"}, {"company": "Cowan Logistics LLC", "email": "mboylston@cowanlogistics.com", "contact": "Michael Boylston"}, {"company": "Keyword Trucking LLC", "email": "rates@keywordtrucking.com", "contact": ""}, {"company": "Universal Intermodal", "email": "BAnderson@universallogistics.com; ALormand@universallogistics.com; SRSutahint@universalintermodal.com", "contact": "Brian Anderson/Allen Lormand"}, {"company": "Horizon Freight System", "email": "saltlakeops@trxtrucking.com", "contact": "Miguel Silva"}, {"company": "Suntecktts", "email": "kln@suntecktts.com", "contact": "Yesica / Donald"}], "Portland, WA": [{"company": "Cargomatic", "email": "yyin@cargomatic.com", "contact": "Yubin Yin"}, {"company": "KTI", "email": "ben.v@ktitrans.com", "contact": "Ben Vanthournout"}, {"company": "Northwest Container Service", "email": "truckdispatch@nwcontainer.com", "contact": "Paul Keeth"}, {"company": "SHIPPERS TRANSPORT EXPRESS", "email": "steportland@shipperstransport.com", "contact": "Dan DePaola"}, {"company": "STG", "email": "drayagepricing@stgusa.com", "contact": ""}, {"company": "TERMINAL TRANSFER", "email": "RATES@TERMINALTRANSFER.COM", "contact": "TAYLOR BRYANT"}, {"company": "Portland Container Repair", "email": "rates@pdxcontainer.com", "contact": ""}, {"company": "Suntecktts", "email": "kln@suntecktts.com", "contact": "Yesica / Donald"}], "Minneapolis/St.Paul, MN": [{"company": "Cobra Trans", "email": "cobradispatch@cobratrans.com", "contact": "Marcus Derickson"}, {"company": "KTI", "email": "ben.v@ktitrans.com", "contact": "Ben Vanthournout"}, {"company": "ITS Logistics LLC", "email": "KerryApex-IM@its4logistics.com; cbourns@its4logistics.com", "contact": "Team Distribution List // Cameron Bourns"}, {"company": "HLI GOVERNMENT SERVICES", "email": "Jenna.Carprue@solveralogistics.com", "contact": "Jenna Carprue"}], "El Paso/Santa Teresa": [{"company": "Cowan Logistics LLC", "email": "jswann@cowanlogistics.com", "contact": "Julia Swann"}], "Nashville, TN": [{"company": "Dunavant", "email": "robert.clawson@dunavant.com", "contact": "Robert Clawson"}, {"company": "Evans Delivery", "email": "eha@evansdelivery.com", "contact": "Alyssa Kirkpatrick / Steve Mahathey"}, {"company": "Horizon (TRX Inc.)", "email": "igooch@rykilogistics.com", "contact": "IESHA GOOCH"}, {"company": "STG", "email": "drayagepricing@stgusa.com", "contact": ""}, {"company": "TCW, Inc", "email": "lconnell@tcwonline.com", "contact": "Luke Connell"}, {"company": "TRX Inc.", "email": "nashville@rykilogistics.com", "contact": "IESHA GOOCH"}, {"company": "WW Rowland Trucking Co.", "email": "quote@wwrowland.com", "contact": "Kenny Stout"}], "Memphis, TN": [{"company": "Dunavant", "email": "robert.clawson@dunavant.com", "contact": "Robert Clawson"}, {"company": "Genesis Intermodal Services", "email": "george@genesisintermodal.com", "contact": "George Albritton"}, {"company": "Gulf Winds International", "email": "Pricing@gwii.com", "contact": "Pricing"}, {"company": "Mainstream Transportation", "email": "MiThomas@dart.net ; sbondra@dart.net", "contact": "Miranda and Shannon"}, {"company": "NEWHAWK XPRESS", "email": "NHM@NEWHAWKXPRESS.COM", "contact": ""}, {"company": "PBI", "email": "rate@pbindustries.com", "contact": "Heejin Kim"}, {"company": "U.S. Multimodal Group", "email": "KATO@portxlogistics.com", "contact": "Kirk Bualicex"}, {"company": "Universal Intermodal Services, Inc.", "email": "intermodalpricing@universalintermodal.com", "contact": "Pricing Team"}, {"company": "WW Rowland Trucking Co.", "email": "quote@wwrowland.com", "contact": "Jason Trent"}, {"company": "Container Port Group", "email": "Quote@Containerport.com", "contact": "Quote"}], "Charlotte, NC": [{"company": "Genesis Intermodal Services", "email": "george@genesisintermodal.com", "contact": "George Albritton"}, {"company": "STG", "email": "drayagepricing@stgusa.com", "contact": ""}, {"company": "Universal Intermodal Services, Inc.", "email": "intermodalpricing@universalintermodal.com", "contact": "Pricing Team"}, {"company": "Veterans Express", "email": "VCN@VETXP.COM", "contact": "VCN@VETXP.COM"}, {"company": "Container Port Group", "email": "Quote@Containerport.com", "contact": "Quote Team"}], "Charleston, SC": [{"company": "Genesis Intermodal Services", "email": "george@genesisintermodal.com", "contact": "George Albritton"}, {"company": "LCG Freight Inc", "email": "t.wilson@lcgfreight.com", "contact": "Tyler Wilson"}, {"company": "LCG Freight Inc", "email": "salesGroup@lcgfreight.com", "contact": "Tyler Wilson"}, {"company": "NFI Industries", "email": "pricing@calcartage.com", "contact": ""}, {"company": "QIC", "email": "CHARLESTON@QICLLC.NET", "contact": "HALEY"}, {"company": "QIC", "email": "CHARLESTON@QICLLC.NET", "contact": "HALEY"}, {"company": "Southern Cartage", "email": "sales@southerncompanies.net", "contact": "Danielys (Dani)"}, {"company": "US Services", "email": "Christ@usservicestrucking.com", "contact": "Chris"}, {"company": "Container Port Group", "email": "Quote@Containerport.com", "contact": "Quote Team"}], "Omaha/Council Bluffs, NE": [{"company": "KTI", "email": "ben.v@ktitrans.com", "contact": "Ben Vanthournout"}, {"company": "U.S. Multimodal Group", "email": "KATO@portxlogistics.com", "contact": "Kirk Bualicex"}, {"company": "Avenue Logistics", "email": "drayrates@avenuelogistics.com", "contact": ""}], "Louisville, KY": [{"company": "KTI", "email": "ben.v@ktitrans.com", "contact": "Ben Vanthournout"}, {"company": "Horizon Freight System", "email": "LOUCS@RYKILOGISTICS.COM", "contact": "DANNIELLE/TARA"}, {"company": "Land Trans (Evans Network)", "email": "lena.camara@landtrans.net", "contact": "lena.camara"}, {"company": "Horizon Freight System", "email": "LOUCS@RYKILOGISTICS.COM", "contact": "DANNIELLE/TARA"}, {"company": "HLI GOVERNMENT SERVICES", "email": "Jenna.Carprue@solveralogistics.com", "contact": "Jenna Carprue"}], "Greer, SC": [{"company": "TCW, Inc", "email": "lconnell@tcwonline.com", "contact": "Luke Connell"}, {"company": "Container Port Group", "email": "Quote@Containerport.com", "contact": "Quote Team"}], "Wilmington NC": [{"company": "TRX Inc.", "email": "mcneill.bo@gmail.com", "contact": "Bo McNeill"}], "Greer, GA": [{"company": "Universal Intermodal Services, Inc.", "email": "intermodalpricing@universalintermodal.com", "contact": "Pricing Team"}], "Cincinnati, OH": [{"company": "WM. Hafer Drayage", "email": "hafermr@hafertrucking.com", "contact": "Various"}, {"company": "Horizon Freight System", "email": "CINCIOPS@HZNFINC.COM", "contact": "KRISTA"}, {"company": "AMX", "email": "cincycs@amxtrans.com", "contact": "Customer Service"}, {"company": "Horizon Freight System", "email": "CINCIOPS@HZNFINC.COM", "contact": "KRISTA"}, {"company": "HLI GOVERNMENT SERVICES", "email": "Jenna.Carprue@solveralogistics.com", "contact": "Jenna Carprue"}], "Minneapolis, MN": [{"company": "Horizon Freight System", "email": "Minneapolis@horizonfreightsystem.com", "contact": "Group"}, {"company": "Horizon Freight System", "email": "minneapolis@horizonfreightsystem.com", "contact": "Jeffery Kabella"}, {"company": "Calhoun Truck Lines", "email": "sales@calhountrucklines.com", "contact": "Kim Schwartz/Khyrstyna Dymarchuk"}], "Baltimore, MD": [{"company": "Gulf Winds International", "email": "Pricing@gwii.com", "contact": "Pricing"}, {"company": "Lightning Transportation Inc", "email": "rates@lightningtrans.com", "contact": "rates@lightningtrans.com"}, {"company": "MEDLOG", "email": "us045-ck.pricing@medlog.com", "contact": "group"}, {"company": "Eastern Drayage", "email": "troyd@easterndrayage.com", "contact": "Troy Deocharran"}, {"company": "ITS Logistics LLC", "email": "KerryApex-IM@its4logistics.com; cbourns@its4logistics.com", "contact": "Team Distribution List // Cameron Bourns"}, {"company": "Daylight Logistics Inc", "email": "Mahendra@daylightlogisticsinc.com", "contact": "Mahendra Seoupaul"}], "New York, NY": [{"company": "MEDLOG", "email": "us045-ck.pricing@medlog.com", "contact": "group"}, {"company": "Eastern Drayage", "email": "troyd@easterndrayage.com", "contact": "Troy Deocharran"}, {"company": "Port24", "email": "cs@port24.com", "contact": "Ana Curbelo"}, {"company": "JAAP", "email": "sales@jaaptrucking.com", "contact": "John Gan"}, {"company": "ITS Logistics LLC", "email": "KerryApex-IM@its4logistics.com; cbourns@its4logistics.com", "contact": "Team Distribution List // Cameron Bourns"}, {"company": "E-Trans Inc.", "email": "stephanie@etranstruck.com", "contact": "Stephanie"}, {"company": "All Season Network Inc", "email": "trucking@allseasonusa.com", "contact": "Ben"}, {"company": "Daylight Logistics Inc", "email": "Mahendra@daylightlogisticsinc.com", "contact": "Mahendra Seoupaul"}], "Omaha/Council Bluffs": [{"company": "Horizon Freight System", "email": "omaha@horizonfreightsystem.com", "contact": "DayDay"}, {"company": "Universal Intermodal Services, Inc.", "email": "teamcouncilbluffs@universalintermodal.com", "contact": "Andrew Lester"}, {"company": "Calhoun Truck Lines", "email": "sales@calhountrucklines.com", "contact": "Kim Schwartz/Alex Doherty"}, {"company": "ITS Logistics LLC", "email": "KerryApex-IM@its4logistics.com; cbourns@its4logistics.com", "contact": "Team Distribution List // Cameron Bourns"}, {"company": "HLI GOVERNMENT SERVICES", "email": "Jenna.Carprue@solveralogistics.com", "contact": "Jenna Carprue"}], "Buffalo, NY": [{"company": "ARL Transport", "email": "arlbuffalo@arlnetwork.com", "contact": "JANICE BRESS"}, {"company": "U.S. Multimodal Group - Parent company", "email": "KATO@portxlogistics.com", "contact": "Kirk Bualicex"}, {"company": "HLI GOVERNMENT SERVICES", "email": "Jenna.Carprue@solveralogistics.com", "contact": "Jenna Carprue"}], "Philadelphia, PA": [{"company": "Eastern Drayage", "email": "troyd@easterndrayage.com", "contact": "Troy Deocharran"}, {"company": "Cowan Logistics LLC", "email": "jswann@cowanlogistics.com", "contact": "Julia Swann"}, {"company": "U.S. Multimodal Group - Parent company", "email": "KATO@portxlogistics.com", "contact": "Kirk Bualicex"}, {"company": "Horizon Freight System", "email": "PatG@hznfinc.com", "contact": "Pat Grisoff"}], "Worcester, MA": [{"company": "ITS Logistics LLC", "email": "KerryApex-IM@its4logistics.com; cbourns@its4logistics.com", "contact": "Team Distribution List // Cameron Bourns"}, {"company": "Hale Intermodal", "email": "mnh@haleintermodal.com", "contact": "GROUP EMAIL"}, {"company": "SCHNEIDER", "email": "sipiorskik@schneider.com", "contact": "Kristy Sipiorski"}], "Boston, MA": [{"company": "ITS Logistics LLC", "email": "KerryApex-IM@its4logistics.com; cbourns@its4logistics.com", "contact": "Team Distribution List // Cameron Bourns"}, {"company": "Hale Intermodal", "email": "mnh@haleintermodal.com", "contact": "GROUP EMAIL"}, {"company": "Horizon Freight System", "email": "KatherineV@HorizonFreightSystem.com", "contact": "Katie Valerie"}, {"company": "RoadOne IntermodaLogisitcs", "email": "nerates@roadone.com", "contact": "Ellie Brown"}, {"company": "Ravan Transit, LLC", "email": "Quotes@ravantransit.com", "contact": "John \"Yianni\" Ravanis"}], "Pittsburgh, PA": [{"company": "Cowan Logistics LLC", "email": "jswann@cowanlogistics.com", "contact": "Julia Swann"}, {"company": "SCHNEIDER", "email": "sipiorskik@schneider.com", "contact": "Kristy Sipiorski"}], "Los Angeles, CA": [{"company": "Fitted Transportation", "email": "inquiries@fittedtransport.com", "contact": "Jesus Hernandez"}, {"company": "J&S Logistics", "email": "dispatch@jnslogistic.com", "contact": "Gaby Dorado"}, {"company": "FRANCO TRUCKING", "email": "Francisco@francotruckinginc.com", "contact": "Francisco Franco"}, {"company": "ELEV8 TRANSPORTATION LLC", "email": "heriberto@elev8transportation.com / sabrina@elev8transportation.com", "contact": "Heriberto Perez / Sabrina Perez"}, {"company": "Mid Lane Carriers", "email": "dispatch@midlanecarriers.com", "contact": "Justin Lee"}, {"company": "NGL Logistics, LLC", "email": "dispatch@ngllogistics.com", "contact": "JJ Lee"}, {"company": "Hight Logistics Inc.", "email": "Rates@hightlogistics.us", "contact": "Luis Juarez"}, {"company": "Trucking 2000", "email": "jeccyl@trucking2000.com", "contact": "Jeccy"}], "Oakland, CA": [{"company": "Capital Containers", "email": "capitalcontainers@gmail.com", "contact": ""}, {"company": "CJ DRAGON TRANSPORTATION INC", "email": "DERRICKPAN@CJDTRANS.COM", "contact": "DERRICK PAN"}, {"company": "Fundis", "email": "ORDER@NEVCALTRU.COM", "contact": "JEN PEARCE"}, {"company": "SK TRANSPORTATION, INC.", "email": "tracy@sktrans.net", "contact": "Tracy Li"}, {"company": "ITS Logistics LLC", "email": "KerryApex-IM@its4logistics.com // cbourns@its4logistics.com", "contact": "Team Distribution List // Cameron Bourns"}, {"company": "UNITED BRIDGE TRUCKING", "email": "dispatch@unitedbridgetruckingcorp.com", "contact": "Elaine Li"}, {"company": "FORREST LOGISTICS", "email": "SPOTQUOTE@FORRESTLOGISTICS.COM", "contact": "TANYA/JAMELA"}, {"company": "Jhutty Tranz Inc", "email": "jeffwilliam@jhuttytranz.us", "contact": "JEFF"}, {"company": "Universal Logistics", "email": "MShort@universallogsitics.com", "contact": "Melissa Short"}, {"company": "Wings Inc", "email": "www.wingsinc@gmail.com", "contact": "Peter Choy"}]};
 
         // Terminals list
         const terminals = ["Atlanta, GA", "Baltimore, MD", "Boston, MA", "Buffalo, NY", "Charleston, SC", "Charlotte, NC", "Chicago, IL", "Cincinnati, OH", "Cleveland, OH", "Columbus, OH", "Dallas, TX", "Denver, CO", "Detroit, MI", "El Paso, TX", "El Paso/Santa Teresa", "Greer, GA", "Greer, SC", "Houston, TX", "Indianapolis, IN", "Jacksonville, FL", "Kansas City", "Los Angeles, CA", "Louisville, KY", "Memphis, TN", "Miami, FL", "Miami/ Port Everglades", "Minneapolis, MN", "Minneapolis/St.Paul, MN", "Mobile, AL", "Nashville, TN", "New Orleans, LA", "New York, NY", "Norfolk, VA", "Oakland, CA", "Omaha/Council Bluffs", "Omaha/Council Bluffs, NE", "Philadelphia, PA", "Pittsburgh, PA", "Portland, WA", "Salt Lake City, UT", "Savannah, GA", "Seattle, WA", "St.Louis, MO", "Tacoma, WA", "Tampa, FL", "Wilmington NC", "Wilmington, NC", "Worcester, MA"];
 
+        // State
+        let batchQueue = [];
+        let currentSuggestedVendors = [];
+        let currentRequestId = null;
+
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
-            // Show setup notice if not configured
-            if (!isJsonBinConfigured) {
-                document.getElementById('setupNotice').style.display = 'block';
-            }
-
-            // Load saved name
-            const savedName = localStorage.getItem('submitterName');
-            if (savedName) {
-                document.getElementById('submitterName').value = savedName;
-            }
-
             // Populate origin dropdown
             const originSelect = document.getElementById('origin');
             terminals.forEach(terminal => {
@@ -529,78 +656,18 @@
 
             // Origin change handler
             originSelect.addEventListener('change', function() {
-                updateVendorsList(this.value);
-            });
-
-            // Urgency option handlers
-            document.querySelectorAll('.urgency-option').forEach(option => {
-                option.addEventListener('click', function() {
-                    document.querySelectorAll('.urgency-option').forEach(o => o.classList.remove('selected'));
-                    this.classList.add('selected');
-                    this.querySelector('input').checked = true;
-                });
+                updateContactsList(this.value);
             });
 
             // Form submit handler
-            document.getElementById('requestForm').addEventListener('submit', function(e) {
+            document.getElementById('emailForm').addEventListener('submit', function(e) {
                 e.preventDefault();
-                submitRequest();
+                addToBatch();
             });
 
-            // Save name on change
-            document.getElementById('submitterName').addEventListener('change', function() {
-                localStorage.setItem('submitterName', this.value);
-            });
-
-            // Load my requests
-            loadMyRequests();
+            // Load requests
+            loadRequests();
         });
-
-        function updateVendorsList(terminal) {
-            const container = document.getElementById('vendorsContainer');
-            const selectedCountDiv = document.getElementById('selectedCount');
-
-            if (!terminal || !contactData[terminal]) {
-                container.innerHTML = '<div class="no-vendors">Select an origin to see available vendors</div>';
-                selectedCountDiv.textContent = '';
-                return;
-            }
-
-            const vendors = contactData[terminal];
-            // Get unique company names
-            const uniqueCompanies = [...new Set(vendors.map(v => v.company))];
-
-            let html = '';
-            uniqueCompanies.forEach((company, index) => {
-                html += `
-                    <div class="vendor-item" onclick="toggleVendor(${index})">
-                        <input type="checkbox" id="vendor_${index}" data-company="${company}">
-                        <span class="vendor-name">${company}</span>
-                    </div>
-                `;
-            });
-
-            container.innerHTML = html;
-            updateSelectedCount();
-        }
-
-        function toggleVendor(index) {
-            const checkbox = document.getElementById(`vendor_${index}`);
-            checkbox.checked = !checkbox.checked;
-            updateSelectedCount();
-        }
-
-        function updateSelectedCount() {
-            const checkboxes = document.querySelectorAll('#vendorsContainer input[type="checkbox"]:checked');
-            const selectedCountDiv = document.getElementById('selectedCount');
-            const count = checkboxes.length;
-            selectedCountDiv.textContent = count > 0 ? `${count} vendor(s) suggested` : '';
-        }
-
-        function getSelectedVendors() {
-            const checkboxes = document.querySelectorAll('#vendorsContainer input[type="checkbox"]:checked');
-            return Array.from(checkboxes).map(cb => cb.dataset.company);
-        }
 
         // JSONBin API functions
         async function fetchRequests() {
@@ -659,136 +726,366 @@
             }
         }
 
-        async function submitRequest() {
-            const submitterName = document.getElementById('submitterName').value.trim();
-            const origin = document.getElementById('origin').value;
-            const destination = document.getElementById('destination').value.trim();
-            const urgency = document.querySelector('input[name="urgency"]:checked').value;
-            const additionalDetails = document.getElementById('additionalDetails').value.trim();
-            const additionalCC = document.getElementById('additionalCC').value.trim();
-            const suggestedVendors = getSelectedVendors();
+        async function loadRequests() {
+            const queueDiv = document.getElementById('requestQueue');
+            const countSpan = document.getElementById('queueCount');
 
-            if (!submitterName) {
-                alert('Please enter your name.');
-                document.getElementById('submitterName').focus();
+            // Load from JSONBin or localStorage
+            const requests = await fetchRequests();
+
+            // Sort by urgency (rush first, then urgent, then normal) and then by date
+            const urgencyOrder = { rush: 0, urgent: 1, normal: 2 };
+            requests.sort((a, b) => {
+                const urgencyDiff = urgencyOrder[a.urgency] - urgencyOrder[b.urgency];
+                if (urgencyDiff !== 0) return urgencyDiff;
+                return new Date(b.timestamp) - new Date(a.timestamp);
+            });
+
+            countSpan.textContent = requests.length;
+
+            if (requests.length === 0) {
+                queueDiv.innerHTML = `
+                    <div class="empty-queue">
+                        <div class="empty-queue-icon">📭</div>
+                        <p>No pending requests</p>
+                        <p style="font-size: 12px; margin-top: 10px;">Requests submitted by the ops team will appear here.</p>
+                    </div>
+                `;
                 return;
             }
+
+            let html = '';
+            requests.forEach((req, index) => {
+                const date = new Date(req.timestamp).toLocaleDateString();
+                const time = new Date(req.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                html += `
+                    <div class="request-card" id="request-${req.id}" onclick="selectRequest(${req.id})">
+                        <div class="request-header">
+                            <div class="request-route">${req.origin} → ${req.destination}</div>
+                            <span class="request-urgency ${req.urgency}">${req.urgency}</span>
+                        </div>
+                        <div class="request-meta">
+                            👤 ${req.submitterName} • 📅 ${date} ${time}
+                        </div>
+                        ${req.additionalDetails ? `<div class="request-details">${req.additionalDetails}</div>` : ''}
+                        ${req.suggestedVendors ? `<div class="request-suggested">💡 Suggested: ${req.suggestedVendors}</div>` : ''}
+                        <div class="request-actions">
+                            <button class="btn-sm btn-load" onclick="event.stopPropagation(); loadRequest(${req.id})">📥 Load</button>
+                            <button class="btn-sm btn-delete" onclick="event.stopPropagation(); deleteRequest(${req.id})">🗑️ Delete</button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            queueDiv.innerHTML = html;
+        }
+
+        function selectRequest(id) {
+            // Highlight selected
+            document.querySelectorAll('.request-card').forEach(card => card.classList.remove('selected'));
+            const card = document.getElementById(`request-${id}`);
+            if (card) card.classList.add('selected');
+        }
+
+        async function loadRequest(id) {
+            const requests = await fetchRequests();
+            const request = requests.find(r => r.id === id);
+
+            if (!request) {
+                alert('Request not found');
+                return;
+            }
+
+            // Store current request ID
+            currentRequestId = id;
+
+            // Parse suggested vendors
+            currentSuggestedVendors = request.suggestedVendors
+                ? request.suggestedVendors.split(',').map(v => v.trim())
+                : [];
+
+            // Fill form
+            document.getElementById('origin').value = request.origin;
+            document.getElementById('destination').value = request.destination;
+            document.getElementById('additionalDetails').value = request.additionalDetails || '';
+            document.getElementById('additionalCC').value = request.additionalCC || '';
+
+            // Update contacts list with suggested vendors highlighted
+            updateContactsList(request.origin);
+
+            // Show loaded indicator
+            const loadedDiv = document.getElementById('loadedFrom');
+            document.getElementById('loadedFromText').textContent =
+                `${request.origin} → ${request.destination} (from ${request.submitterName})`;
+            loadedDiv.classList.add('show');
+
+            // Highlight in queue
+            selectRequest(id);
+
+            // Scroll to form on mobile
+            document.getElementById('emailForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        async function deleteRequest(id) {
+            if (!confirm('Delete this request?')) return;
+
+            let requests = await fetchRequests();
+            requests = requests.filter(r => r.id !== id);
+            await saveRequests(requests);
+
+            if (currentRequestId === id) {
+                currentRequestId = null;
+                document.getElementById('loadedFrom').classList.remove('show');
+            }
+
+            loadRequests();
+        }
+
+        function updateContactsList(terminal) {
+            const container = document.getElementById('contactsContainer');
+            const selectedCountDiv = document.getElementById('selectedCount');
+
+            if (!terminal || !contactData[terminal]) {
+                container.innerHTML = '<div class="no-contacts">Select an origin to see available contacts</div>';
+                selectedCountDiv.textContent = '';
+                return;
+            }
+
+            const contacts = contactData[terminal];
+            let html = `
+                <div class="select-all-row">
+                    <input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)">
+                    <label for="selectAll">Select All (${contacts.length} contacts)</label>
+                </div>
+            `;
+
+            contacts.forEach((contact, index) => {
+                const isSuggested = currentSuggestedVendors.some(v =>
+                    contact.company.toLowerCase().includes(v.toLowerCase()) ||
+                    v.toLowerCase().includes(contact.company.toLowerCase())
+                );
+
+                html += `
+                    <div class="contact-item ${isSuggested ? 'suggested' : ''}" onclick="toggleContact(${index})">
+                        <input type="checkbox" id="contact_${index}" data-email="${contact.email}" data-company="${contact.company}" ${isSuggested ? 'checked' : ''}>
+                        <div class="contact-info">
+                            <div class="contact-company">
+                                ${contact.company}
+                                ${isSuggested ? '<span class="contact-suggested-badge">SUGGESTED</span>' : ''}
+                            </div>
+                            <div class="contact-email">${contact.email} ${contact.contact ? `(${contact.contact})` : ''}</div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+            updateSelectedCount();
+        }
+
+        function toggleContact(index) {
+            const checkbox = document.getElementById(`contact_${index}`);
+            checkbox.checked = !checkbox.checked;
+            updateSelectedCount();
+        }
+
+        function toggleSelectAll(selectAllCheckbox) {
+            const checkboxes = document.querySelectorAll('#contactsContainer input[type="checkbox"]:not(#selectAll)');
+            checkboxes.forEach(cb => cb.checked = selectAllCheckbox.checked);
+            updateSelectedCount();
+        }
+
+        function updateSelectedCount() {
+            const checkboxes = document.querySelectorAll('#contactsContainer input[type="checkbox"]:not(#selectAll):checked');
+            const selectedCountDiv = document.getElementById('selectedCount');
+            const count = checkboxes.length;
+            selectedCountDiv.textContent = count > 0 ? `${count} contact(s) selected` : '';
+        }
+
+        function getSelectedContacts() {
+            const checkboxes = document.querySelectorAll('#contactsContainer input[type="checkbox"]:not(#selectAll):checked');
+            return Array.from(checkboxes).map(cb => ({
+                email: cb.dataset.email,
+                company: cb.dataset.company
+            }));
+        }
+
+        function addToBatch() {
+            const origin = document.getElementById('origin').value;
+            const destination = document.getElementById('destination').value.trim();
+            const additionalCC = document.getElementById('additionalCC').value.trim();
+            const additionalDetails = document.getElementById('additionalDetails').value.trim();
+            const selectedContacts = getSelectedContacts();
 
             if (!origin || !destination) {
                 alert('Please select an origin and enter a destination.');
                 return;
             }
 
-            const submitBtn = document.getElementById('submitBtn');
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Submitting...';
-
-            const requestData = {
-                id: Date.now(),
-                submitterName,
-                origin,
-                destination,
-                urgency,
-                additionalDetails,
-                additionalCC,
-                suggestedVendors: suggestedVendors.join(', '),
-                timestamp: new Date().toISOString()
-            };
-
-            try {
-                const requests = await fetchRequests();
-                requests.push(requestData);
-                await saveRequests(requests);
-                showSuccess();
-            } catch (error) {
-                console.error('Error submitting request:', error);
-                document.getElementById('errorMessage').classList.add('show');
-                setTimeout(() => {
-                    document.getElementById('errorMessage').classList.remove('show');
-                }, 4000);
-            }
-
-            submitBtn.disabled = false;
-            submitBtn.textContent = '📤 Submit Request';
-        }
-
-        function showSuccess() {
-            const successMsg = document.getElementById('successMessage');
-            successMsg.classList.add('show');
-
-            // Clear form
-            document.getElementById('destination').value = '';
-            document.getElementById('additionalDetails').value = '';
-            document.getElementById('additionalCC').value = '';
-            document.querySelectorAll('.urgency-option').forEach(o => o.classList.remove('selected'));
-            document.querySelector('.urgency-option[data-value="normal"]').classList.add('selected');
-            document.querySelector('input[name="urgency"][value="normal"]').checked = true;
-            document.querySelectorAll('#vendorsContainer input[type="checkbox"]').forEach(cb => cb.checked = false);
-            updateSelectedCount();
-
-            setTimeout(() => {
-                successMsg.classList.remove('show');
-            }, 4000);
-
-            loadMyRequests();
-        }
-
-        async function loadMyRequests() {
-            const submitterName = document.getElementById('submitterName').value.trim();
-            const listDiv = document.getElementById('myRequestsList');
-            const countSpan = document.getElementById('requestCount');
-
-            const allRequests = await fetchRequests();
-            const myRequests = submitterName
-                ? allRequests.filter(r => r.submitterName && r.submitterName.toLowerCase() === submitterName.toLowerCase())
-                : [];
-
-            displayRequests(myRequests.reverse());
-        }
-
-        function displayRequests(requests) {
-            const listDiv = document.getElementById('myRequestsList');
-            const countSpan = document.getElementById('requestCount');
-
-            countSpan.textContent = requests.length;
-
-            if (requests.length === 0) {
-                listDiv.innerHTML = '<div class="empty-requests">No requests submitted yet.</div>';
+            if (selectedContacts.length === 0) {
+                alert('Please select at least one contact.');
                 return;
             }
 
+            // Add to batch
+            batchQueue.push({
+                origin,
+                destination,
+                additionalCC,
+                additionalDetails,
+                contacts: selectedContacts,
+                requestId: currentRequestId
+            });
+
+            updateBatchDisplay();
+
+            // Reset for next
+            document.getElementById('destination').value = '';
+            document.getElementById('additionalDetails').value = '';
+            const checkboxes = document.querySelectorAll('#contactsContainer input[type="checkbox"]');
+            checkboxes.forEach(cb => cb.checked = false);
+            updateSelectedCount();
+            currentSuggestedVendors = [];
+            currentRequestId = null;
+            document.getElementById('loadedFrom').classList.remove('show');
+        }
+
+        function updateBatchDisplay() {
+            const queueDiv = document.getElementById('batchQueue');
+            const batchCountSpan = document.getElementById('batchCount');
+            const emailCountSpan = document.getElementById('emailCount');
+            const generateBtn = document.getElementById('generateAllBtn');
+
+            if (batchQueue.length === 0) {
+                queueDiv.innerHTML = '<div class="empty-queue" style="padding: 20px;">No emails in batch yet.</div>';
+                batchCountSpan.textContent = '0';
+                emailCountSpan.textContent = '0 emails';
+                generateBtn.disabled = true;
+                return;
+            }
+
+            let totalEmails = batchQueue.reduce((sum, item) => sum + item.contacts.length, 0);
+            batchCountSpan.textContent = batchQueue.length;
+            emailCountSpan.textContent = `${totalEmails} email${totalEmails !== 1 ? 's' : ''}`;
+            generateBtn.disabled = false;
+
             let html = '';
-            requests.slice(0, 10).forEach(req => {
-                const date = new Date(req.timestamp).toLocaleDateString();
+            batchQueue.forEach((item, index) => {
                 html += `
-                    <div class="request-item">
-                        <div class="request-route">
-                            ${req.origin} → ${req.destination}
-                            <span class="request-urgency ${req.urgency}">${req.urgency.toUpperCase()}</span>
+                    <div class="batch-item">
+                        <div class="batch-item-info">
+                            <div class="batch-item-route">${item.origin} → ${item.destination}</div>
+                            <div class="batch-item-contacts">${item.contacts.map(c => c.company).join(', ')}</div>
                         </div>
-                        <div class="request-meta">
-                            Submitted ${date}
-                            ${req.additionalDetails ? ` • ${req.additionalDetails.substring(0, 50)}${req.additionalDetails.length > 50 ? '...' : ''}` : ''}
-                        </div>
+                        <button class="btn-sm btn-delete" onclick="removeFromBatch(${index})">✕</button>
                     </div>
                 `;
             });
 
-            listDiv.innerHTML = html;
+            queueDiv.innerHTML = html;
+        }
+
+        function removeFromBatch(index) {
+            batchQueue.splice(index, 1);
+            updateBatchDisplay();
+        }
+
+        function clearBatch() {
+            if (batchQueue.length > 0 && !confirm('Clear all emails from the batch?')) {
+                return;
+            }
+            batchQueue = [];
+            updateBatchDisplay();
         }
 
         function clearForm() {
-            document.getElementById('requestForm').reset();
-            document.getElementById('vendorsContainer').innerHTML = '<div class="no-vendors">Select an origin to see available vendors</div>';
+            document.getElementById('emailForm').reset();
+            document.getElementById('contactsContainer').innerHTML = '<div class="no-contacts">Select an origin to see available contacts</div>';
             document.getElementById('selectedCount').textContent = '';
-            document.querySelectorAll('.urgency-option').forEach(o => o.classList.remove('selected'));
-            document.querySelector('.urgency-option[data-value="normal"]').classList.add('selected');
+            document.getElementById('loadedFrom').classList.remove('show');
+            currentSuggestedVendors = [];
+            currentRequestId = null;
         }
 
-        // Reload requests when name changes
-        document.getElementById('submitterName').addEventListener('input', function() {
-            loadMyRequests();
-        });
+        async function generateAllEmails() {
+            if (batchQueue.length === 0) {
+                alert('No emails in batch.');
+                return;
+            }
+
+            const defaultCC = 'US.KApex.FCL.Trucking@KLN.COM';
+            let emailIndex = 0;
+
+            // Collect request IDs to delete after
+            const processedRequestIds = [...new Set(batchQueue.filter(b => b.requestId).map(b => b.requestId))];
+
+            batchQueue.forEach(request => {
+                request.contacts.forEach(contact => {
+                    setTimeout(() => {
+                        const subject = `Drayage Request from ${request.origin} to ${request.destination}`;
+
+                        let body = `Hello,
+
+When possible, could you please help to quote the below drayage move using our fuel and the same validity/terms as our recent RFQ?
+
+${request.origin}
+To
+${request.destination}`;
+
+                        if (request.additionalDetails) {
+                            body += `
+
+${request.additionalDetails}`;
+                        }
+
+                        body += `
+
+Thanks in advance for your help,
+
+Leandro (Boomer) Vazquez
+Operations Manager
+K-Apex (SFO) - 877 Mahler Rd. 2nd Floor, Burlingame, CA 94010
+D 1 650 754 6744 | T 1 650 589 2575  | M 1 802 355 1998 | E Leandro.Vazquez@kln.com THE ONE · IN ASIA  | www.k-apex.kln.com`;
+
+                        let cc = defaultCC;
+                        if (request.additionalCC) {
+                            const formattedCC = request.additionalCC.replace(/,/g, ';').replace(/\s*;\s*/g, '; ');
+                            cc += '; ' + formattedCC;
+                        }
+
+                        let toEmail = contact.email.split(';')[0].trim();
+                        toEmail = toEmail.replace(/<|>/g, '').trim();
+
+                        const mailtoLink = `mailto:${encodeURIComponent(toEmail)}?subject=${encodeURIComponent(subject)}&cc=${encodeURIComponent(cc)}&body=${encodeURIComponent(body)}`;
+
+                        window.open(mailtoLink, '_blank');
+                    }, emailIndex * 400);
+
+                    emailIndex++;
+                });
+            });
+
+            // Show success
+            const successMsg = document.getElementById('successMessage');
+            successMsg.classList.add('show');
+
+            // Clear batch and optionally delete processed requests
+            setTimeout(async () => {
+                batchQueue = [];
+                updateBatchDisplay();
+                successMsg.classList.remove('show');
+
+                // Ask to delete processed requests
+                if (processedRequestIds.length > 0) {
+                    if (confirm(`Delete the ${processedRequestIds.length} processed request(s) from the queue?`)) {
+                        let requests = await fetchRequests();
+                        requests = requests.filter(r => !processedRequestIds.includes(r.id));
+                        await saveRequests(requests);
+                        loadRequests();
+                    }
+                }
+            }, 3000);
+        }
     </script>
 </body>
 </html>
