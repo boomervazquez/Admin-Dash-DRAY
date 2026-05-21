@@ -478,6 +478,118 @@
             display: block;
         }
 
+        /* Generated Emails Panel */
+        .generated-emails {
+            margin-top: 15px;
+            border-top: 2px dashed #eb723d;
+            padding-top: 15px;
+        }
+
+        .generated-emails h3 {
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .generated-emails-hint {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 12px;
+        }
+
+        .generated-email-item {
+            background: #fef3ed;
+            border: 1px solid #f0c8a8;
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .generated-email-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .generated-email-route {
+            font-weight: 600;
+            font-size: 12px;
+            color: #333;
+        }
+
+        .generated-email-to {
+            font-size: 11px;
+            color: #666;
+            margin-top: 2px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .btn-open-email {
+            background: #eb723d;
+            color: white;
+            padding: 6px 12px;
+            font-size: 11px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .btn-open-email:hover {
+            background: #c95820;
+        }
+
+        .btn-open-email.opened {
+            background: #6c757d;
+        }
+
+        .btn-open-email.opened:hover {
+            background: #5a5a5a;
+        }
+
+        .generated-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+
+        .btn-download-all {
+            background: #5a5a5a;
+            color: white;
+            padding: 8px 16px;
+            font-size: 13px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .btn-download-all:hover {
+            background: #4a4a4a;
+        }
+
+        .btn-finish {
+            background: #28a745;
+            color: white;
+            padding: 8px 16px;
+            font-size: 13px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .btn-finish:hover {
+            background: #218838;
+        }
+
         /* Admin badge */
         .admin-badge {
             background: #5a5a5a;
@@ -631,8 +743,10 @@
                 </div>
 
                 <div id="successMessage" class="success-message">
-                    ✔ Opening email drafts in Outlook...
+                    ✔ Email list generated below.
                 </div>
+
+                <div id="generatedEmails" class="generated-emails" style="display:none"></div>
             </div>
 
             <div class="info-box">
@@ -678,6 +792,8 @@
         let batchQueue = [];
         let currentSuggestedVendors = [];
         let currentRequestId = null;
+        let generatedEmails = [];
+        let processedRequestIdsForFinish = [];
 
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
@@ -1079,24 +1195,23 @@
             }
 
             const defaultCC = 'US.KApex.FCL.Trucking@KLN.COM';
-            let emailIndex = 0;
+            generatedEmails = [];
 
-            // Collect request IDs to delete after
-            const processedRequestIds = [...new Set(batchQueue.filter(b => b.requestId).map(b => b.requestId))];
+            // Collect request IDs to delete after the user finishes
+            processedRequestIdsForFinish = [...new Set(batchQueue.filter(b => b.requestId).map(b => b.requestId))];
 
             batchQueue.forEach(request => {
                 request.contacts.forEach(contact => {
-                    setTimeout(() => {
-                        // Build subject line: Drayage Request from [Origin] to [Destination] // [Reference No.] // [Office]
-                        let subject = `Drayage Request from ${request.origin} to ${request.destination}`;
-                        if (request.referenceNo) {
-                            subject += ` // ${request.referenceNo}`;
-                        }
-                        if (request.office) {
-                            subject += ` // ${request.office}`;
-                        }
+                    // Build subject line: Drayage Request from [Origin] to [Destination] // [Reference No.] // [Office]
+                    let subject = `Drayage Request from ${request.origin} to ${request.destination}`;
+                    if (request.referenceNo) {
+                        subject += ` // ${request.referenceNo}`;
+                    }
+                    if (request.office) {
+                        subject += ` // ${request.office}`;
+                    }
 
-                        let body = `Hello,
+                    let body = `Hello,
 
 When possible, could you please help to quote the below drayage move using our fuel and the same validity/terms as our recent RFQ?
 
@@ -1104,15 +1219,15 @@ ${request.origin}
 To
 ${request.destination}`;
 
-                        if (request.additionalDetails) {
-                            body += `
+                    if (request.additionalDetails) {
+                        body += `
 
 ${request.additionalDetails}`;
-                        }
+                    }
 
-                        body += `
-                        
-Current FSC can be viewed at https://k-apex.kln.com/fsc/ 
+                    body += `
+
+Current FSC can be viewed at https://k-apex.kln.com/fsc/
 Kindly keep all parties in copy going forward.
 Thanks in advance for your help,
 
@@ -1120,55 +1235,175 @@ K-Apex Drayage Procurement
 K-Apex (SFO) - 877 Mahler Rd. 2nd Floor, Burlingame, CA 94010
 T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-apex.kln.com`;
 
-                        let cc = defaultCC;
-                        // Add office CC if exists
-                        if (request.officeCC) {
-                            cc += '; ' + request.officeCC;
-                        }
-                        if (request.additionalCC) {
-                            const formattedCC = request.additionalCC.replace(/,/g, ';').replace(/\s*;\s*/g, '; ');
-                            cc += '; ' + formattedCC;
-                        }
+                    let cc = defaultCC;
+                    // Add office CC if exists
+                    if (request.officeCC) {
+                        cc += '; ' + request.officeCC;
+                    }
+                    if (request.additionalCC) {
+                        const formattedCC = request.additionalCC.replace(/,/g, ';').replace(/\s*;\s*/g, '; ');
+                        cc += '; ' + formattedCC;
+                    }
 
-                        let toEmail = contact.email.split(';')[0].trim();
-                        toEmail = toEmail.replace(/<|>/g, '').trim();
+                    let toEmail = contact.email.split(';')[0].trim();
+                    toEmail = toEmail.replace(/<|>/g, '').trim();
 
-                        const mailtoLink = `mailto:${encodeURIComponent(toEmail)}?subject=${encodeURIComponent(subject)}&cc=${encodeURIComponent(cc)}&body=${encodeURIComponent(body)}`;
-
-                        // Use anchor-click instead of window.open so Chrome's popup blocker
-                        // (especially on macOS) doesn't kill emails after the first one.
-                        const link = document.createElement('a');
-                        link.href = mailtoLink;
-                        link.style.display = 'none';
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                    }, emailIndex * 1000);
-
-                    emailIndex++;
+                    generatedEmails.push({
+                        to: toEmail,
+                        cc: cc,
+                        subject: subject,
+                        body: body,
+                        company: contact.company,
+                        origin: request.origin,
+                        destination: request.destination,
+                        opened: false
+                    });
                 });
             });
 
-            // Show success
+            renderGeneratedEmails();
+
+            // Show success indicator briefly
             const successMsg = document.getElementById('successMessage');
             successMsg.classList.add('show');
+            setTimeout(() => successMsg.classList.remove('show'), 2500);
+        }
 
-            // Clear batch and optionally delete processed requests
-            setTimeout(async () => {
-                batchQueue = [];
-                updateBatchDisplay();
-                successMsg.classList.remove('show');
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str == null ? '' : String(str);
+            return div.innerHTML;
+        }
 
-                // Ask to delete processed requests
-                if (processedRequestIds.length > 0) {
-                    if (confirm(`Delete the ${processedRequestIds.length} processed request(s) from the queue?`)) {
-                        let requests = await fetchRequests();
-                        requests = requests.filter(r => !processedRequestIds.includes(r.id));
-                        await saveRequests(requests);
-                        loadRequests();
+        function renderGeneratedEmails() {
+            const container = document.getElementById('generatedEmails');
+            if (!container) return;
+
+            if (generatedEmails.length === 0) {
+                container.style.display = 'none';
+                container.innerHTML = '';
+                return;
+            }
+
+            container.style.display = 'block';
+            const openedCount = generatedEmails.filter(e => e.opened).length;
+            let html = `<h3>Ready to Open (${openedCount} / ${generatedEmails.length})</h3>`;
+            html += `<div class="generated-emails-hint">Click each row to open that draft in Outlook. Or use Download all as .eml to save them as drag-and-drop files.</div>`;
+
+            generatedEmails.forEach((em, idx) => {
+                const openedClass = em.opened ? 'opened' : '';
+                const btnLabel = em.opened ? 'Opened' : 'Open';
+                html += `
+                    <div class="generated-email-item">
+                        <div class="generated-email-info">
+                            <div class="generated-email-route">${escapeHtml(em.origin)} -> ${escapeHtml(em.destination)} — ${escapeHtml(em.company)}</div>
+                            <div class="generated-email-to">To: ${escapeHtml(em.to)}</div>
+                        </div>
+                        <button type="button" class="btn-open-email ${openedClass}" onclick="openSingleEmail(${idx})">${btnLabel}</button>
+                    </div>
+                `;
+            });
+
+            html += `
+                <div class="generated-actions">
+                    <button type="button" class="btn-download-all" onclick="downloadAllAsEml()">Download all as .eml</button>
+                    <button type="button" class="btn-finish" onclick="finishBatch()">Done - Clear &amp; Process</button>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        function openSingleEmail(idx) {
+            const em = generatedEmails[idx];
+            if (!em) return;
+
+            const mailtoLink = `mailto:${encodeURIComponent(em.to)}?subject=${encodeURIComponent(em.subject)}&cc=${encodeURIComponent(em.cc)}&body=${encodeURIComponent(em.body)}`;
+
+            // Anchor-click inside a user-gesture (button click) so Chrome/Outlook honors it.
+            const link = document.createElement('a');
+            link.href = mailtoLink;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            generatedEmails[idx].opened = true;
+            renderGeneratedEmails();
+        }
+
+        function sanitizeFilename(s) {
+            return (s || '').replace(/[^a-z0-9_\-]/gi, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').substring(0, 60);
+        }
+
+        function buildEml(em) {
+            // X-Unsent: 1 tells Outlook to open this as an editable draft.
+            // Convert semicolon-separated CC to comma-separated for RFC 822 compliance.
+            const ccForEml = (em.cc || '').replace(/;\s*/g, ', ').replace(/,\s*,/g, ',').replace(/^,\s*|,\s*$/g, '');
+            const normalizedBody = (em.body || '').replace(/\r?\n/g, '\r\n');
+            const safeSubject = (em.subject || '').replace(/\r?\n/g, ' ');
+            const lines = [
+                'X-Unsent: 1',
+                'MIME-Version: 1.0',
+                'Content-Type: text/plain; charset=utf-8',
+                'Content-Transfer-Encoding: 8bit',
+                `To: ${em.to}`,
+                `Cc: ${ccForEml}`,
+                `Subject: ${safeSubject}`,
+                '',
+                normalizedBody
+            ];
+            return lines.join('\r\n');
+        }
+
+        function downloadAllAsEml() {
+            if (generatedEmails.length === 0) return;
+
+            generatedEmails.forEach((em, idx) => {
+                setTimeout(() => {
+                    const eml = buildEml(em);
+                    const blob = new Blob([eml], { type: 'message/rfc822' });
+                    const url = URL.createObjectURL(blob);
+                    const filename = `Drayage_${sanitizeFilename(em.origin)}_to_${sanitizeFilename(em.destination)}_${sanitizeFilename(em.company)}.eml`;
+
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = filename;
+                    link.style.display = 'none';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+
+                    setTimeout(() => URL.revokeObjectURL(url), 2000);
+                }, idx * 250);
+            });
+        }
+
+        async function finishBatch() {
+            if (generatedEmails.length > 0) {
+                const unopened = generatedEmails.filter(e => !e.opened).length;
+                if (unopened > 0) {
+                    if (!confirm(`${unopened} email(s) haven't been opened yet. Clear anyway?`)) {
+                        return;
                     }
                 }
-            }, 3000);
+            }
+
+            const idsToDelete = processedRequestIdsForFinish.slice();
+            batchQueue = [];
+            generatedEmails = [];
+            processedRequestIdsForFinish = [];
+            updateBatchDisplay();
+            renderGeneratedEmails();
+
+            if (idsToDelete.length > 0) {
+                if (confirm(`Delete the ${idsToDelete.length} processed request(s) from the queue?`)) {
+                    let requests = await fetchRequests();
+                    requests = requests.filter(r => !idsToDelete.includes(r.id));
+                    await saveRequests(requests);
+                    loadRequests();
+                }
+            }
         }
     </script>
 </body>
