@@ -1135,8 +1135,15 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
 
                         const mailtoLink = `mailto:${encodeURIComponent(toEmail)}?subject=${encodeURIComponent(subject)}&cc=${encodeURIComponent(cc)}&body=${encodeURIComponent(body)}`;
 
-                        window.open(mailtoLink, '_blank');
-                    }, emailIndex * 400);
+                        // Use anchor-click instead of window.open so Chrome's popup blocker
+                        // (especially on macOS) doesn't kill emails after the first one.
+                        const link = document.createElement('a');
+                        link.href = mailtoLink;
+                        link.style.display = 'none';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                    }, emailIndex * 1000);
 
                     emailIndex++;
                 });
