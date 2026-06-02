@@ -685,6 +685,8 @@
         .rate-table th, .rate-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #e8e8e8; }
         .rate-table th { background: #eee; color: #555; font-size: 10px; text-transform: uppercase; }
         .rate-best { color: #218838; font-weight: 700; }
+        .lookup-override-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; padding: 10px 12px; background: #fff8f3; border: 1px dashed #eb723d; border-radius: 6px; }
+        .lookup-override-label { font-size: 12px; color: #8a5a3c; flex: 1; min-width: 220px; }
     </style>
 </head>
 <body>
@@ -704,7 +706,8 @@
                 </div>
                 <div class="lookup-field">
                     <label for="lookupDest">Destination:</label>
-                    <input type="text" id="lookupDest" placeholder="e.g., Arlington, TX" autocomplete="off">
+                    <input type="text" id="lookupDest" list="destList" placeholder="e.g., Arlington, TX" autocomplete="off">
+                    <datalist id="destList"></datalist>
                 </div>
                 <div class="lookup-field-btn">
                     <button type="button" class="btn-primary lookup-search-btn" onclick="searchLanes()">Search Rates</button>
@@ -734,6 +737,12 @@
                 </div>
             </div>
             <div class="default-cc" style="margin-top:10px;">&#10004; Notification goes to the requestor, CC: US.KApex.FCL.Trucking@KLN.COM</div>
+
+            <div class="lookup-override-row">
+                <span class="lookup-override-label">Manual override &mdash; send a "rates on file" notice for the Origin &rarr; Destination typed above, even if it isn't in the database:</span>
+                <button type="button" class="btn-notify" onclick="notifyOverride()">&#128231; Send notification</button>
+                <button type="button" class="btn-eml" onclick="downloadOverrideEml()">&#8595; .eml</button>
+            </div>
 
             <div id="lookupResults" class="lookup-results">
                 <div class="lookup-empty">Enter an origin/market and/or destination, then click Search Rates.</div>
@@ -1534,11 +1543,43 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
             return (s == null ? '' : String(s)).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
         }
 
+        function uniqueSorted(arr) {
+            return Array.from(new Set(arr)).sort(function (a, b) { return a.localeCompare(b); });
+        }
+
+        // All distinct destinations across the awarded rate cards (sorted).
+        const ALL_DESTS = uniqueSorted(RATE_DATA.map(function (l) { return l.d; }).filter(Boolean));
+
+        // Rebuild the destination autocomplete. If an origin/market is entered,
+        // suggest only destinations reachable from that origin; otherwise all.
+        function updateDestSuggestions() {
+            const dl = document.getElementById('destList');
+            if (!dl) return;
+            const oRaw = (document.getElementById('lookupOrigin').value || '').trim();
+            let dests;
+            if (oRaw) {
+                const oTerms = normLane(oRaw).split(' ').filter(Boolean);
+                const matched = [];
+                RATE_DATA.forEach(function (lane) {
+                    const hayO = normLane((lane.m || '') + ' ' + (lane.o || ''));
+                    if (oTerms.every(function (t) { return hayO.indexOf(t) !== -1; })) matched.push(lane.d);
+                });
+                dests = uniqueSorted(matched.filter(Boolean));
+                if (dests.length === 0) dests = ALL_DESTS; // origin not recognized -> show all
+            } else {
+                dests = ALL_DESTS;
+            }
+            dl.innerHTML = dests.map(function (d) { return '<option>' + escapeHtml(d) + '</option>'; }).join('');
+        }
+
         function initLaneLookup() {
             const dl = document.getElementById('marketList');
             if (dl && typeof terminals !== 'undefined') {
-                dl.innerHTML = terminals.map(function (t) { return '<option value="' + t + '">'; }).join('');
+                dl.innerHTML = uniqueSorted(terminals).map(function (t) { return '<option>' + escapeHtml(t) + '</option>'; }).join('');
             }
+            updateDestSuggestions();
+            const oEl = document.getElementById('lookupOrigin');
+            if (oEl) oEl.addEventListener('input', updateDestSuggestions);
             ['lookupOrigin', 'lookupDest'].forEach(function (id) {
                 const el = document.getElementById(id);
                 if (el) el.addEventListener('keydown', function (e) {
@@ -1625,7 +1666,7 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
             if (currentLaneMatches.length === 0) {
                 resultsDiv.innerHTML =
                     '<div class="lookup-summary none">\u2717 No awarded rates on file for ' + escapeHtml(laneLabel) + '.</div>' +
-                    '<div class="lookup-empty">No match in the awarded rate cards. Use the request form below to source new quotes from vendors.</div>';
+                    '<div class="lookup-empty">No match in the awarded rate cards. You can still send a "rates on file" notice with the <strong>Manual override</strong> button above, or use the request form below to source new quotes from vendors.</div>';
                 return;
             }
             const CAP = 100;
@@ -1682,9 +1723,10 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
             if (btn) btn.textContent = showing ? 'Hide rates' : 'Show rates';
         }
 
-        // Build the "rates on file" notification email object for a lane.
-        // Returns null (and alerts) if the requestor email is missing.
-        function buildRequestorEmail(lane) {
+        // Core builder for the "rates on file" notification, used by both the
+        // per-lane buttons and the manual override. Returns null (and alerts) if
+        // the requestor email is missing.
+        function buildRequestorEmailFor(originText, destText) {
             const requestor = (document.getElementById('lookupRequestor').value || '').trim();
             if (!requestor) {
                 alert('Please enter the requestor email address (top of the Lane Lookup section) before sending the notification.');
@@ -1695,13 +1737,13 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
             const reference = (document.getElementById('lookupReference').value || '').trim() || lookupContext.referenceNo || '';
             const office = lookupContext.office || '';
 
-            let subject = 'Rates on File \u2014 Drayage from ' + lane.o + ' to ' + lane.d;
+            let subject = 'Rates on File \u2014 Drayage from ' + originText + ' to ' + destText;
             if (reference) subject += ' // ' + reference;
             if (office) subject += ' // ' + office;
 
             let body = 'Hello,\n\n' +
                 'Good news \u2014 we already have awarded drayage rates on file for the lane below, so there is no need to send out a new rate request:\n\n' +
-                lane.o + '\nTo\n' + lane.d;
+                originText + '\nTo\n' + destText;
             if (reference) body += '\n\nReference: ' + reference;
             body += '\n\n' +
                 'Please go ahead and proceed using our awarded rates available in the CRM or shared folder. If you have any questions, just reply to this email and K-Apex Drayage Procurement will be happy to provide it.\n\n' +
@@ -1711,14 +1753,15 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
                 'T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE \u00B7 IN ASIA | www.k-apex.kln.com';
 
             const toEmail = requestor.replace(/,/g, ';').replace(/\s*;\s*/g, '; ');
-            return { to: toEmail, cc: TRUCKING_INBOX, subject: subject, body: body, origin: lane.o, destination: lane.d, company: 'Requestor' };
+            return { to: toEmail, cc: TRUCKING_INBOX, subject: subject, body: body, origin: originText, destination: destText, company: 'Requestor' };
         }
 
-        function notifyRequestor(idx) {
-            const lane = currentLaneMatches[idx];
-            if (!lane) return;
-            const em = buildRequestorEmail(lane);
-            if (!em) return;
+        function buildRequestorEmail(lane) {
+            return buildRequestorEmailFor(lane.o, lane.d);
+        }
+
+        // Open an editable Outlook draft (same gesture pattern as the vendor emails).
+        function openMailtoDraft(em) {
             const link = document.createElement('a');
             link.href = 'mailto:' + encodeURIComponent(em.to) +
                 '?subject=' + encodeURIComponent(em.subject) +
@@ -1730,22 +1773,54 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
             document.body.removeChild(link);
         }
 
-        function downloadRequestorEml(idx) {
-            const lane = currentLaneMatches[idx];
-            if (!lane) return;
-            const em = buildRequestorEmail(lane);
-            if (!em) return;
+        function downloadEml(em, filename) {
             const eml = buildEml(em); // reuse main-script helper
             const blob = new Blob([eml], { type: 'message/rfc822' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'RatesOnFile_' + sanitizeFilename(lane.o) + '_to_' + sanitizeFilename(lane.d) + '.eml';
+            a.download = filename;
             a.style.display = 'none';
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+        }
+
+        function notifyRequestor(idx) {
+            const lane = currentLaneMatches[idx];
+            if (!lane) return;
+            const em = buildRequestorEmail(lane);
+            if (!em) return;
+            openMailtoDraft(em);
+        }
+
+        function downloadRequestorEml(idx) {
+            const lane = currentLaneMatches[idx];
+            if (!lane) return;
+            const em = buildRequestorEmail(lane);
+            if (!em) return;
+            downloadEml(em, 'RatesOnFile_' + sanitizeFilename(lane.o) + '_to_' + sanitizeFilename(lane.d) + '.eml');
+        }
+
+        // Manual override: send the "rates on file" notice for the typed lane,
+        // even when the search found no awarded rates.
+        function notifyOverride() {
+            const o = (document.getElementById('lookupOrigin').value || '').trim();
+            const d = (document.getElementById('lookupDest').value || '').trim();
+            if (!o || !d) { alert('Enter both an Origin/Market and a Destination above before sending a manual notification.'); return; }
+            const em = buildRequestorEmailFor(o, d);
+            if (!em) return;
+            openMailtoDraft(em);
+        }
+
+        function downloadOverrideEml() {
+            const o = (document.getElementById('lookupOrigin').value || '').trim();
+            const d = (document.getElementById('lookupDest').value || '').trim();
+            if (!o || !d) { alert('Enter both an Origin/Market and a Destination above first.'); return; }
+            const em = buildRequestorEmailFor(o, d);
+            if (!em) return;
+            downloadEml(em, 'RatesOnFile_' + sanitizeFilename(o) + '_to_' + sanitizeFilename(d) + '.eml');
         }
 
         // Keep the queue dropdown in sync with the Request Queue panel. Whenever
@@ -1760,6 +1835,18 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
                 return result;
             };
         }
+
+        // Alphabetize the main form's "Origin Location" dropdown. The original
+        // script populates it on DOMContentLoaded; this listener runs afterwards
+        // and reorders the options, keeping the "-- Select Origin --" placeholder
+        // first. (Display order only -- contact lookups are by value, unaffected.)
+        document.addEventListener('DOMContentLoaded', function () {
+            const sel = document.getElementById('origin');
+            if (!sel) return;
+            const rest = Array.from(sel.options).filter(function (o) { return o.value !== ''; });
+            rest.sort(function (a, b) { return a.textContent.localeCompare(b.textContent); });
+            rest.forEach(function (o) { sel.appendChild(o); }); // moves each node after the placeholder
+        });
 
         // DOM is fully parsed (this script is at the end of <body>).
         initLaneLookup();
