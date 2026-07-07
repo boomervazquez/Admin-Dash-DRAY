@@ -689,6 +689,8 @@
         .lookup-override-label { font-size: 12px; color: #8a5a3c; flex: 1; min-width: 220px; }
 
         /* ===== Sent History (archive of processed requests) ===== */
+        .sent-header { display: flex; align-items: center; cursor: pointer; user-select: none; }
+        .sent-header:hover h2 { color: #eb723d; }
         .sent-controls { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
         .sent-controls input[type="text"] { flex: 1; min-width: 220px; }
         .sent-sync-status { display: none; background: #fff3cd; color: #856404; padding: 8px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 12px; }
@@ -889,23 +891,28 @@
     <!-- Sent History: archive of every request sent out (separate JSONBin bin) -->
     <div class="lookup-container" style="margin-top: 20px;">
         <div class="panel">
-            <div style="display: flex; align-items: center; margin-bottom: 4px;">
+            <div class="sent-header" onclick="toggleSentHistory()" title="Click to show or hide the sent history">
                 <h2 style="margin-bottom: 0;">&#128228; Sent History
                     <span class="queue-count" id="sentCount">0</span>
                 </h2>
-                <button class="refresh-btn" onclick="loadSentHistory()">&#128260; Refresh</button>
-            </div>
-            <p class="subtitle">Every request sent to vendors is archived here automatically when you click "Done - Clear &amp; Process" (rates-on-file notices are recorded too). Stored in its own JSONBin bin, so it survives queue deletions.</p>
-
-            <div id="sentSyncStatus" class="sent-sync-status"></div>
-
-            <div class="sent-controls">
-                <input type="text" id="sentSearch" placeholder="Filter by origin, destination, vendor, reference, office, requestor..." oninput="renderSentHistory()" autocomplete="off">
-                <button type="button" class="btn-eml" onclick="exportSentCsv()">&#8595; Export CSV</button>
+                <button type="button" class="refresh-btn" id="sentToggleBtn">&#9662; Show</button>
             </div>
 
-            <div id="sentHistory" class="sent-history">
-                <div class="lookup-empty">Loading sent history&hellip;</div>
+            <!-- Sync warning stays visible even while the section is collapsed -->
+            <div id="sentSyncStatus" class="sent-sync-status" style="margin-top: 10px;"></div>
+
+            <div id="sentHistoryBody" style="display: none;">
+                <p class="subtitle" style="margin-top: 8px;">Every request sent to vendors is archived here automatically when you click "Done - Clear &amp; Process" (rates-on-file notices are recorded too). Stored in its own JSONBin bin, so it survives queue deletions.</p>
+
+                <div class="sent-controls">
+                    <input type="text" id="sentSearch" placeholder="Filter by origin, destination, vendor, reference, office, requestor..." oninput="renderSentHistory()" autocomplete="off">
+                    <button type="button" class="btn-eml" onclick="exportSentCsv()">&#8595; Export CSV</button>
+                    <button type="button" class="btn-eml" onclick="loadSentHistory()">&#8635; Refresh</button>
+                </div>
+
+                <div id="sentHistory" class="sent-history">
+                    <div class="lookup-empty">Loading sent history&hellip;</div>
+                </div>
             </div>
         </div>
     </div>
@@ -1837,6 +1844,17 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
                 originalRequest: null
             };
             appendToSentLog([entry]).then(() => loadSentHistory());
+        }
+
+        // The section starts collapsed so the archive doesn't stretch the
+        // page; the count badge and sync warning stay visible either way.
+        let sentHistoryExpanded = false;
+        function toggleSentHistory() {
+            sentHistoryExpanded = !sentHistoryExpanded;
+            const body = document.getElementById('sentHistoryBody');
+            const btn = document.getElementById('sentToggleBtn');
+            if (body) body.style.display = sentHistoryExpanded ? 'block' : 'none';
+            if (btn) btn.innerHTML = sentHistoryExpanded ? '&#9652; Hide' : '&#9662; Show';
         }
 
         async function loadSentHistory() {
