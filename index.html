@@ -821,6 +821,11 @@
                     </select>
                 </div>
 
+                <div class="form-group" id="customOriginGroup" style="display: none;">
+                    <label for="customOrigin">Custom Origin Location: <span class="label-hint">(type the origin to use)</span></label>
+                    <input type="text" id="customOrigin" name="customOrigin" placeholder="e.g., Kansas City, MO">
+                </div>
+
                 <div class="form-group">
                     <label for="destination">Destination Location:</label>
                     <input type="text" id="destination" name="destination" placeholder="e.g., Chicago, IL" required>
@@ -956,6 +961,10 @@
         // Terminals list
         const terminals = ["Dallas", "El Paso & Santa Teresa", "Houston", "Huntsville", "Mobile", "New Orleans", "Atlanta", "Charleston", "Charlotte", "Greer", "Jacksonville", "Memphis", "Miami / Port Everglades", "Nashville", "Norfolk", "Savannah", "Tampa", "Wilmington", "Chicago", "Chippewa Falls", "Cincinnati", "Cleveland", "Columbus", "Detroit", "Indianapolis", "Kansas City", "Louisville", "Minneapolis & St Paul", "Omaha & Council Bluffs", "St. Louis", "Baltimore", "Boston", "Buffalo", "New York & New Jersey", "Philadelphia", "Pittsburgh", "Worcester", "Honolulu", "Los Angeles & Long Beach", "Oakland", "Phoenix", "Denver", "Portland", "Salt Lake City", "Seattle", "Tacoma"];
 
+        // Sentinel value for the "Other" origin option: the admin types the
+        // origin and picks from all vendors across every terminal.
+        const OTHER_ORIGIN = '__OTHER__';
+
         // State
         let batchQueue = [];
         let currentSuggestedVendors = [];
@@ -977,8 +986,16 @@
                 originSelect.appendChild(option);
             });
 
+            // "Other" sits at the bottom (the alphabetizer below keeps it
+            // there): pick it to type any origin and choose from all vendors.
+            const otherOption = document.createElement('option');
+            otherOption.value = OTHER_ORIGIN;
+            otherOption.textContent = 'Other (type your own origin)';
+            originSelect.appendChild(otherOption);
+
             // Origin change handler
             originSelect.addEventListener('change', function() {
+                toggleCustomOrigin(this.value === OTHER_ORIGIN);
                 updateContactsList(this.value);
             });
 
@@ -1224,15 +1241,15 @@
                 html += `
                     <div class="request-card" id="request-${req.id}" onclick="selectRequest(${req.id})">
                         <div class="request-header">
-                            <div class="request-route">${req.origin} → ${req.destination}</div>
-                            ${req.office ? `<span class="request-urgency normal">${req.office}</span>` : ''}
+                            <div class="request-route">${escapeHtml(req.origin)} → ${escapeHtml(req.destination)}</div>
+                            ${req.office ? `<span class="request-urgency normal">${escapeHtml(req.office)}</span>` : ''}
                         </div>
                         <div class="request-meta">
                             📅 ${date} ${time}
-                            ${req.referenceNo ? ` • 📋 ${req.referenceNo}` : ''}
+                            ${req.referenceNo ? ` • 📋 ${escapeHtml(req.referenceNo)}` : ''}
                         </div>
-                        ${req.additionalDetails ? `<div class="request-details">${req.additionalDetails}</div>` : ''}
-                        ${req.suggestedVendors ? `<div class="request-suggested">💡 Suggested: ${req.suggestedVendors}</div>` : ''}
+                        ${req.additionalDetails ? `<div class="request-details">${escapeHtml(req.additionalDetails)}</div>` : ''}
+                        ${req.suggestedVendors ? `<div class="request-suggested">💡 Suggested: ${escapeHtml(req.suggestedVendors)}</div>` : ''}
                         <div class="request-actions">
                             <button class="btn-sm btn-load" onclick="event.stopPropagation(); loadRequest(${req.id})">📥 Load</button>
                             <button class="btn-sm btn-delete" onclick="event.stopPropagation(); deleteRequest(${req.id})">🗑️ Delete</button>
@@ -1266,21 +1283,34 @@
             currentOffice = request.office || '';
             currentReferenceNo = request.referenceNo || '';
 
-            // Parse suggested vendors
+            // Parse suggested vendors (drop empty tokens — an empty string
+            // matches every vendor and would pre-check the whole list)
             currentSuggestedVendors = request.suggestedVendors
-                ? request.suggestedVendors.split(',').map(v => v.trim())
+                ? request.suggestedVendors.split(',').map(v => v.trim()).filter(Boolean)
                 : [];
 
             // Fill form
             document.getElementById('office').value = request.office || '';
-            document.getElementById('origin').value = request.origin;
+            const originSelect = document.getElementById('origin');
+            originSelect.value = request.origin;
+            let contactsKey = request.origin;
+            if (request.origin && originSelect.value !== request.origin) {
+                // Origin isn't a known terminal — load it via "Other" so the
+                // typed origin is kept and every vendor is available.
+                originSelect.value = OTHER_ORIGIN;
+                toggleCustomOrigin(true);
+                document.getElementById('customOrigin').value = request.origin;
+                contactsKey = OTHER_ORIGIN;
+            } else {
+                toggleCustomOrigin(false);
+            }
             document.getElementById('destination').value = request.destination;
             document.getElementById('additionalDetails').value = request.additionalDetails || '';
             document.getElementById('referenceNo').value = request.referenceNo || '';
             document.getElementById('additionalCC').value = request.additionalCC || '';
 
             // Update contacts list with suggested vendors highlighted
-            updateContactsList(request.origin);
+            updateContactsList(contactsKey);
 
             // Show loaded indicator
             const loadedDiv = document.getElementById('loadedFrom');
@@ -1316,17 +1346,46 @@
             loadRequests();
         }
 
+        function toggleCustomOrigin(show) {
+            // Hide only — don't clear the input, so flipping to a terminal
+            // and back doesn't lose a typed/loaded origin. addToBatch only
+            // reads it while "Other" is selected, and clearForm's reset()
+            // empties it anyway.
+            const group = document.getElementById('customOriginGroup');
+            if (group) group.style.display = show ? 'block' : 'none';
+        }
+
+        // Every vendor across all terminals, deduped by company+email and
+        // sorted by company, for the "Other" origin option.
+        function getAllContactsAlphabetical() {
+            const seen = new Set();
+            const all = [];
+            Object.keys(contactData).forEach(terminal => {
+                (contactData[terminal] || []).forEach(c => {
+                    if (!((c.email || '').trim())) return; // no email -> can't be a recipient
+                    const key = ((c.company || '') + '|' + (c.email || '')).toLowerCase();
+                    if (seen.has(key)) return;
+                    seen.add(key);
+                    all.push(c);
+                });
+            });
+            all.sort((a, b) =>
+                (a.company || '').localeCompare(b.company || '') ||
+                (a.email || '').localeCompare(b.email || ''));
+            return all;
+        }
+
         function updateContactsList(terminal) {
             const container = document.getElementById('contactsContainer');
             const selectedCountDiv = document.getElementById('selectedCount');
 
-            if (!terminal || !contactData[terminal]) {
+            if (!terminal || (terminal !== OTHER_ORIGIN && !contactData[terminal])) {
                 container.innerHTML = '<div class="no-contacts">Select an origin to see available contacts</div>';
                 selectedCountDiv.textContent = '';
                 return;
             }
 
-            const contacts = contactData[terminal];
+            const contacts = terminal === OTHER_ORIGIN ? getAllContactsAlphabetical() : contactData[terminal];
             let html = `
                 <div class="select-all-row">
                     <input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)">
@@ -1335,10 +1394,11 @@
             `;
 
             contacts.forEach((contact, index) => {
-                const isSuggested = currentSuggestedVendors.some(v =>
-                    contact.company.toLowerCase().includes(v.toLowerCase()) ||
-                    v.toLowerCase().includes(contact.company.toLowerCase())
-                );
+                const companyLc = (contact.company || '').toLowerCase();
+                const isSuggested = currentSuggestedVendors.some(v => {
+                    const vLc = v.toLowerCase();
+                    return vLc && companyLc && (companyLc.includes(vLc) || vLc.includes(companyLc));
+                });
 
                 html += `
                     <div class="contact-item ${isSuggested ? 'suggested' : ''}" onclick="toggleContact(${index})">
@@ -1387,7 +1447,14 @@
 
         function addToBatch() {
             const office = document.getElementById('office').value;
-            const origin = document.getElementById('origin').value;
+            let origin = document.getElementById('origin').value;
+            if (origin === OTHER_ORIGIN) {
+                origin = document.getElementById('customOrigin').value.trim();
+                if (!origin) {
+                    alert('Please type the custom origin location.');
+                    return;
+                }
+            }
             const destination = document.getElementById('destination').value.trim();
             const additionalCC = document.getElementById('additionalCC').value.trim();
             const additionalDetails = document.getElementById('additionalDetails').value.trim();
@@ -1473,8 +1540,8 @@
                 html += `
                     <div class="batch-item">
                         <div class="batch-item-info">
-                            <div class="batch-item-route">${item.origin} → ${item.destination}</div>
-                            <div class="batch-item-contacts">${item.contacts.map(c => c.company).join(', ')}</div>
+                            <div class="batch-item-route">${escapeHtml(item.origin)} → ${escapeHtml(item.destination)}</div>
+                            <div class="batch-item-contacts">${item.contacts.map(c => escapeHtml(c.company)).join(', ')}</div>
                         </div>
                         <button class="btn-sm btn-delete" onclick="removeFromBatch(${index})">✕</button>
                     </div>
@@ -1506,6 +1573,7 @@
 
         function clearForm() {
             document.getElementById('emailForm').reset();
+            toggleCustomOrigin(false);
             document.getElementById('contactsContainer').innerHTML = '<div class="no-contacts">Select an origin to see available contacts</div>';
             document.getElementById('selectedCount').textContent = '';
             document.getElementById('loadedFrom').classList.remove('show');
@@ -2370,9 +2438,11 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
         document.addEventListener('DOMContentLoaded', function () {
             const sel = document.getElementById('origin');
             if (!sel) return;
-            const rest = Array.from(sel.options).filter(function (o) { return o.value !== ''; });
+            const other = Array.from(sel.options).find(function (o) { return o.value === '__OTHER__'; });
+            const rest = Array.from(sel.options).filter(function (o) { return o.value !== '' && o.value !== '__OTHER__'; });
             rest.sort(function (a, b) { return a.textContent.localeCompare(b.textContent); });
             rest.forEach(function (o) { sel.appendChild(o); }); // moves each node after the placeholder
+            if (other) sel.appendChild(other); // keep "Other" pinned to the bottom
         });
 
         // DOM is fully parsed (this script is at the end of <body>).
