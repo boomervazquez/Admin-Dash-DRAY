@@ -698,6 +698,7 @@
         .sent-history { max-height: 520px; overflow-y: auto; }
         .sent-type-badge { background: #eb723d; color: #fff; padding: 3px 10px; border-radius: 12px; font-size: 10px; font-weight: 700; white-space: nowrap; }
         .sent-type-badge.rates { background: #28a745; }
+        .sent-type-badge.custom { background: #5a5a5a; }
         .sent-when { font-size: 11px; color: #888; }
         .sent-vendors { font-size: 12px; color: #555; margin-top: 8px; }
         .sent-details { display: none; margin-top: 10px; background: #fff; border-radius: 6px; padding: 10px 12px; font-size: 12px; color: #444; }
@@ -705,7 +706,7 @@
         .sent-details table { width: 100%; border-collapse: collapse; margin-top: 6px; margin-bottom: 8px; }
         .sent-details th, .sent-details td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #eee; font-size: 11px; }
         .sent-details th { background: #f4f4f4; text-transform: uppercase; font-size: 10px; color: #666; }
-        .sent-detail-row { margin-bottom: 4px; word-break: break-word; }
+        .sent-detail-row { margin-bottom: 4px; word-break: break-word; white-space: pre-wrap; }
     </style>
 </head>
 <body>
@@ -893,6 +894,63 @@
         </div>
     </div>
 
+    <!-- Custom Message Templates: write once, generate a draft per recipient -->
+    <div class="lookup-container" style="margin-top: 20px;">
+        <div class="panel">
+            <div class="sent-header" onclick="toggleBlastPanel()" title="Click to show or hide custom message templates">
+                <h2 style="margin-bottom: 0;">&#9993; Custom Message Templates</h2>
+                <button type="button" class="refresh-btn" id="blastToggleBtn">&#9662; Show</button>
+            </div>
+
+            <div id="blastBody" style="display: none;">
+                <p class="subtitle" style="margin-top: 8px;">Write a message once, paste a comma-separated recipient list, and generate an individually addressed draft for each address. Saved templates live in their own JSONBin bin, so they're shared with anyone using this dashboard.</p>
+
+                <div class="form-group">
+                    <label for="tplSelect">Saved templates:</label>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <select id="tplSelect" onchange="applyTemplate(this.value)" style="flex: 2; min-width: 200px;">
+                            <option value="">&mdash; Start blank or pick a template &mdash;</option>
+                        </select>
+                        <button type="button" class="btn-eml" style="flex: 0 0 auto;" onclick="deleteTemplate()">&#128465; Delete</button>
+                        <button type="button" class="btn-eml" style="flex: 0 0 auto;" onclick="refreshTemplateDropdown()" title="Reload templates">&#8635;</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="tplName">Template name: <span class="label-hint">(used when saving)</span></label>
+                    <input type="text" id="tplName" placeholder="e.g., FSC Update Notice" autocomplete="off">
+                </div>
+
+                <div class="form-group">
+                    <label for="tplSubject">Subject:</label>
+                    <input type="text" id="tplSubject" placeholder="e.g., K-Apex Drayage — FSC Update" autocomplete="off">
+                </div>
+
+                <div class="form-group">
+                    <label for="tplBody">Body:</label>
+                    <textarea id="tplBody" style="min-height: 150px;" placeholder="Type the message body once&hellip;"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="tplCc">CC: <span class="label-hint">(optional, comma-separated &mdash; added to every draft)</span></label>
+                    <input type="text" id="tplCc" placeholder="e.g., US.KApex.FCL.Trucking@KLN.COM" autocomplete="off">
+                </div>
+
+                <div class="form-group">
+                    <label for="blastRecipients">Recipients: <span class="label-hint">(comma- or semicolon-separated &mdash; one draft is generated per address)</span></label>
+                    <textarea id="blastRecipients" placeholder="vendor1@example.com, vendor2@example.com, vendor3@example.com"></textarea>
+                </div>
+
+                <div class="button-group">
+                    <button type="button" class="btn-primary" onclick="generateBlastEmails()">&#128640; Generate Emails</button>
+                    <button type="button" class="btn-secondary" onclick="saveTemplate()">&#128190; Save Template</button>
+                </div>
+
+                <div id="blastGenerated" class="generated-emails" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- Sent History: archive of every request sent out (separate JSONBin bin) -->
     <div class="lookup-container" style="margin-top: 20px;">
         <div class="panel">
@@ -907,7 +965,7 @@
             <div id="sentSyncStatus" class="sent-sync-status" style="margin-top: 10px;"></div>
 
             <div id="sentHistoryBody" style="display: none;">
-                <p class="subtitle" style="margin-top: 8px;">Every request sent to vendors is archived here automatically when you click "Done - Clear &amp; Process" (rates-on-file notices are recorded too). Stored in its own JSONBin bin, so it survives queue deletions.</p>
+                <p class="subtitle" style="margin-top: 8px;">Every request sent to vendors is archived here automatically when you click "Done - Clear &amp; Process" (rates-on-file notices and custom template messages are recorded too). Stored in its own JSONBin bin, so it survives queue deletions.</p>
 
                 <div class="sent-controls">
                     <input type="text" id="sentSearch" placeholder="Filter by origin, destination, vendor, reference, office, requestor..." oninput="renderSentHistory()" autocomplete="off">
@@ -1013,6 +1071,10 @@
 
             // Restore drafts that were generated but not finished before a reload
             restoreUnfinishedBatch();
+
+            // Custom message templates
+            refreshTemplateDropdown();
+            restoreUnfinishedBlast();
         });
 
         // JSONBin API functions
@@ -1749,13 +1811,10 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
 
             const mailtoLink = `mailto:${encodeURIComponent(em.to)}?subject=${encodeURIComponent(em.subject)}&cc=${encodeURIComponent(em.cc)}&body=${encodeURIComponent(em.body)}`;
 
-            // Anchor-click inside a user-gesture (button click) so Chrome/Outlook honors it.
-            const link = document.createElement('a');
-            link.href = mailtoLink;
-            link.style.display = 'none';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            // Anchor-click inside a user-gesture (button click) so Chrome/Outlook
+            // honors it; guarded because long additional details can push the
+            // mailto URL past Outlook's ~2KB truncation limit.
+            if (!openMailtoGuarded(mailtoLink)) return;
 
             generatedEmails[idx].opened = true;
             renderGeneratedEmails();
@@ -1777,12 +1836,10 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
                 'MIME-Version: 1.0',
                 'Content-Type: text/plain; charset=utf-8',
                 'Content-Transfer-Encoding: 8bit',
-                `To: ${em.to}`,
-                `Cc: ${ccForEml}`,
-                `Subject: ${safeSubject}`,
-                '',
-                normalizedBody
+                `To: ${em.to}`
             ];
+            if (ccForEml) lines.push(`Cc: ${ccForEml}`); // custom messages may have no CC
+            lines.push(`Subject: ${safeSubject}`, '', normalizedBody);
             return lines.join('\r\n');
         }
 
@@ -2000,7 +2057,13 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
             shown.forEach((en, idx) => {
                 const when = fmtWhen(en.sentAt);
                 const isRof = en.type === 'rates_on_file';
-                const badge = '<span class="sent-type-badge' + (isRof ? ' rates' : '') + '">' + (isRof ? 'RATES ON FILE' : 'VENDOR REQUEST') + '</span>';
+                const isCustom = en.type === 'custom_message';
+                const badgeClass = isRof ? ' rates' : (isCustom ? ' custom' : '');
+                const badgeLabel = isRof ? 'RATES ON FILE' : (isCustom ? 'CUSTOM MESSAGE' : 'VENDOR REQUEST');
+                const badge = '<span class="sent-type-badge' + badgeClass + '">' + badgeLabel + '</span>';
+                const routeLine = isCustom
+                    ? escapeHtml(en.subject || '(no subject)')
+                    : escapeHtml(en.origin || '?') + ' → ' + escapeHtml(en.destination || '?');
                 const vendors = (en.sentTo || []).map(s => escapeHtml(s.company || s.email || '')).join(', ');
                 const metaBits = [];
                 if (en.office) metaBits.push(escapeHtml(en.office));
@@ -2011,7 +2074,7 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
                         <div class="lane-card-header">
                             <div>
                                 <div class="lane-market">${escapeHtml(when)}${metaBits.length ? ' &bull; ' + metaBits.join(' &bull; ') : ''}</div>
-                                <div class="lane-route">${escapeHtml(en.origin || '?')} → ${escapeHtml(en.destination || '?')}</div>
+                                <div class="lane-route">${routeLine}</div>
                             </div>
                             ${badge}
                         </div>
@@ -2092,7 +2155,7 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
                 targets.forEach(t => {
                     rows.push([
                         en.sentAt || '',
-                        en.type === 'rates_on_file' ? 'Rates on file notice' : 'Vendor request',
+                        en.type === 'rates_on_file' ? 'Rates on file notice' : (en.type === 'custom_message' ? 'Custom message' : 'Vendor request'),
                         en.office || '', en.origin || '', en.destination || '', en.referenceNo || '',
                         en.requestorEmails || '', t.company || '', t.email || '',
                         t.opened === '' ? '' : (t.opened ? 'Yes' : 'No'),
@@ -2112,6 +2175,337 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
             a.click();
             document.body.removeChild(a);
             setTimeout(() => URL.revokeObjectURL(url), 2000);
+        }
+
+        // ========================================
+        // CUSTOM MESSAGE TEMPLATES (write once, draft per recipient)
+        // ========================================
+        const TEMPLATES_BIN_ID = '6a552275da38895dfe5814db';
+        const isTemplatesBinConfigured = isJsonBinConfigured && TEMPLATES_BIN_ID !== 'YOUR_TEMPLATES_BIN_ID_HERE';
+
+        let templatesCache = [];
+        let blastEmails = [];
+        let blastPanelExpanded = false;
+
+        function toggleBlastPanel() {
+            blastPanelExpanded = !blastPanelExpanded;
+            const body = document.getElementById('blastBody');
+            const btn = document.getElementById('blastToggleBtn');
+            if (body) body.style.display = blastPanelExpanded ? 'block' : 'none';
+            if (btn) btn.innerHTML = blastPanelExpanded ? '&#9652; Hide' : '&#9662; Show';
+        }
+
+        async function fetchTemplates() {
+            if (!isTemplatesBinConfigured) {
+                return JSON.parse(localStorage.getItem('messageTemplates') || '[]');
+            }
+            // A local change that failed to sync takes precedence: push it
+            // before pulling, otherwise the GET would overwrite the mirror
+            // and silently erase the unsynced save/delete.
+            if (localStorage.getItem('templatesPendingSync')) {
+                const mirror = JSON.parse(localStorage.getItem('messageTemplates') || '[]');
+                await saveTemplatesList(mirror); // clears the flag on success
+                return mirror;
+            }
+            try {
+                const response = await fetch(`https://api.jsonbin.io/v3/b/${TEMPLATES_BIN_ID}/latest?timestamp=${Date.now()}`, {
+                    headers: { 'X-Access-Key': JSONBIN_API_KEY, 'Cache-Control': 'no-cache' }
+                });
+                if (!response.ok) throw new Error('GET ' + response.status);
+                const data = await response.json();
+                const templates = data.record.templates || [];
+                try { localStorage.setItem('messageTemplates', JSON.stringify(templates)); } catch (e) {}
+                return templates;
+            } catch (error) {
+                console.error('Error fetching templates:', error);
+                return JSON.parse(localStorage.getItem('messageTemplates') || '[]');
+            }
+        }
+
+        async function saveTemplatesList(templates) {
+            try { localStorage.setItem('messageTemplates', JSON.stringify(templates)); } catch (e) {}
+            if (!isTemplatesBinConfigured) return true;
+            try {
+                const response = await fetch(`https://api.jsonbin.io/v3/b/${TEMPLATES_BIN_ID}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Access-Key': JSONBIN_API_KEY,
+                        'X-Bin-Versioning': 'false'
+                    },
+                    body: JSON.stringify({ templates: templates })
+                });
+                if (!response.ok) throw new Error('PUT ' + response.status);
+                localStorage.removeItem('templatesPendingSync');
+                return true;
+            } catch (error) {
+                console.error('Error saving templates (kept locally, will retry on next load):', error);
+                try { localStorage.setItem('templatesPendingSync', '1'); } catch (e) {}
+                return false;
+            }
+        }
+
+        async function refreshTemplateDropdown(selectId) {
+            templatesCache = await fetchTemplates();
+            templatesCache.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            const sel = document.getElementById('tplSelect');
+            if (!sel) return;
+            let opts = '<option value="">&mdash; Start blank or pick a template &mdash;</option>';
+            templatesCache.forEach(t => {
+                opts += `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name || '(unnamed)')}</option>`;
+            });
+            sel.innerHTML = opts;
+            if (selectId) sel.value = selectId;
+        }
+
+        function applyTemplate(id) {
+            if (!id) return;
+            const t = templatesCache.find(t2 => String(t2.id) === String(id));
+            if (!t) return;
+            document.getElementById('tplName').value = t.name || '';
+            document.getElementById('tplSubject').value = t.subject || '';
+            document.getElementById('tplBody').value = t.body || '';
+            document.getElementById('tplCc').value = t.cc || '';
+        }
+
+        async function saveTemplate() {
+            const name = document.getElementById('tplName').value.trim();
+            const subject = document.getElementById('tplSubject').value.trim();
+            const body = document.getElementById('tplBody').value;
+            const cc = document.getElementById('tplCc').value.trim();
+            if (!name) { alert('Give the template a name before saving.'); return; }
+            if (!subject && !body.trim()) { alert('Add a subject or body before saving the template.'); return; }
+
+            // Ask about overwriting BEFORE fetching, so the snapshot we write
+            // isn't stale by however long the dialog sits open.
+            const cachedDup = templatesCache.find(t => (t.name || '').toLowerCase() === name.toLowerCase());
+            if (cachedDup && !confirm(`A template named "${cachedDup.name}" already exists. Overwrite it?`)) return;
+
+            // Fresh snapshot right before writing so templates saved from
+            // another machine in the meantime are kept.
+            const templates = await fetchTemplates();
+            const existing = templates.find(t => (t.name || '').toLowerCase() === name.toLowerCase());
+            if (existing && !cachedDup && !confirm(`A template named "${existing.name}" was just saved from another machine. Overwrite it?`)) return;
+            let savedId;
+            if (existing) {
+                existing.name = name;
+                existing.subject = subject;
+                existing.body = body;
+                existing.cc = cc;
+                existing.updatedAt = new Date().toISOString();
+                savedId = existing.id;
+            } else {
+                savedId = makeSentEntryId('tpl');
+                templates.push({ id: savedId, name, subject, body, cc, updatedAt: new Date().toISOString() });
+            }
+            const ok = await saveTemplatesList(templates);
+            await refreshTemplateDropdown(savedId);
+            alert(ok
+                ? `Template "${name}" saved.`
+                : `Template "${name}" saved in this browser \u2014 syncing to JSONBin failed but will retry automatically. It won't appear on other machines until then.`);
+        }
+
+        async function deleteTemplate() {
+            const sel = document.getElementById('tplSelect');
+            const id = sel ? sel.value : '';
+            if (!id) { alert('Pick a saved template to delete.'); return; }
+            const t = templatesCache.find(t2 => String(t2.id) === String(id));
+            if (!t) return;
+            if (!confirm(`Delete the template "${t.name}"? This removes it for everyone using the dashboard.`)) return;
+            const templates = (await fetchTemplates()).filter(t2 => String(t2.id) !== String(id));
+            const ok = await saveTemplatesList(templates);
+            await refreshTemplateDropdown();
+            if (!ok) alert(`"${t.name}" was deleted in this browser — syncing to JSONBin failed but will retry automatically. It may still appear on other machines until then.`);
+        }
+
+        function parseRecipientList(raw) {
+            const seen = new Set();
+            const out = [];
+            (raw || '').split(/[,;\n]/).forEach(s => {
+                const email = s.trim().replace(/^<|>$/g, '');
+                if (!email) return;
+                const key = email.toLowerCase();
+                if (seen.has(key)) return;
+                seen.add(key);
+                out.push(email);
+            });
+            return out;
+        }
+
+        function generateBlastEmails() {
+            // Don't silently wipe a previous blast whose opened (= likely
+            // sent) drafts were never archived with "Done - Archive & Clear".
+            const openedPending = blastEmails.filter(e => e.opened).length;
+            if (openedPending > 0 && !confirm(
+                `You have ${openedPending} opened email(s) from a previous blast that haven't been archived to Sent History yet. ` +
+                `Generating a new blast will discard that record.\n\n` +
+                `Click Cancel and use "Done - Archive & Clear" first if you already sent them.`)) {
+                return;
+            }
+
+            const subject = document.getElementById('tplSubject').value.trim();
+            const body = document.getElementById('tplBody').value;
+            const cc = document.getElementById('tplCc').value.trim().replace(/,/g, ';').replace(/\s*;\s*/g, '; ');
+            const recipients = parseRecipientList(document.getElementById('blastRecipients').value);
+
+            if (!subject) { alert('Enter a subject.'); return; }
+            if (!body.trim()) { alert('Type the message body.'); return; }
+            if (recipients.length === 0) { alert('Paste at least one recipient email address.'); return; }
+            const invalid = recipients.filter(r => r.indexOf('@') === -1 || /\s/.test(r));
+            if (invalid.length > 0) {
+                alert('These recipients don\'t look like email addresses:\n\n' + invalid.join('\n') + '\n\nFix them and generate again.');
+                return;
+            }
+
+            blastEmails = recipients.map(to => ({ to: to, cc: cc, subject: subject, body: body, opened: false }));
+            renderBlastEmails();
+            saveUnfinishedBlast();
+        }
+
+        function renderBlastEmails() {
+            const container = document.getElementById('blastGenerated');
+            if (!container) return;
+            if (blastEmails.length === 0) {
+                container.style.display = 'none';
+                container.innerHTML = '';
+                return;
+            }
+            container.style.display = 'block';
+            const openedCount = blastEmails.filter(e => e.opened).length;
+            let html = `<h3>Ready to Open (${openedCount} / ${blastEmails.length})</h3>`;
+            html += `<div class="generated-emails-hint">Click each row to open that draft in Outlook, or download them all as .eml files. "Done" archives the send to Sent History and clears the list.</div>`;
+            blastEmails.forEach((em, idx) => {
+                html += `
+                    <div class="generated-email-item">
+                        <div class="generated-email-info">
+                            <div class="generated-email-route">${escapeHtml(em.subject)}</div>
+                            <div class="generated-email-to">To: ${escapeHtml(em.to)}</div>
+                        </div>
+                        <button type="button" class="btn-open-email ${em.opened ? 'opened' : ''}" onclick="openBlastEmail(${idx})">${em.opened ? 'Opened' : 'Open'}</button>
+                    </div>
+                `;
+            });
+            html += `
+                <div class="generated-actions">
+                    <button type="button" class="btn-download-all" onclick="downloadAllBlastEml()">Download all as .eml</button>
+                    <button type="button" class="btn-finish" onclick="finishBlast()">Done - Archive &amp; Clear</button>
+                </div>
+            `;
+            container.innerHTML = html;
+        }
+
+        // Opens a mailto draft via an anchor click. Windows/Outlook cap
+        // mailto URLs around ~2KB and silently truncate the body past that,
+        // so long messages get a warning steering to the .eml download.
+        function openMailtoGuarded(href) {
+            if (href.length > 1900 && !confirm(
+                'This message is long — Outlook may cut the body off when opened this way. ' +
+                'Use "Download all as .eml" to get the full message.\n\nOpen as a (possibly truncated) draft anyway?')) {
+                return false;
+            }
+            const link = document.createElement('a');
+            link.href = href;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            return true;
+        }
+
+        function openBlastEmail(idx) {
+            const em = blastEmails[idx];
+            if (!em) return;
+            const href = `mailto:${encodeURIComponent(em.to)}?subject=${encodeURIComponent(em.subject)}` +
+                (em.cc ? `&cc=${encodeURIComponent(em.cc)}` : '') +
+                `&body=${encodeURIComponent(em.body)}`;
+            if (!openMailtoGuarded(href)) return;
+            blastEmails[idx].opened = true;
+            renderBlastEmails();
+            saveUnfinishedBlast(); // keep opened flags if the page reloads
+        }
+
+        function downloadAllBlastEml() {
+            blastEmails.forEach((em, idx) => {
+                setTimeout(() => {
+                    const eml = buildEml(em);
+                    const blob = new Blob([eml], { type: 'message/rfc822' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'Message_' + sanitizeFilename(em.subject) + '_' + sanitizeFilename(em.to) + '.eml';
+                    a.style.display = 'none';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    setTimeout(() => URL.revokeObjectURL(url), 2000);
+                }, idx * 250);
+            });
+        }
+
+        async function finishBlast() {
+            if (blastEmails.length === 0) return;
+            const unopened = blastEmails.filter(e => !e.opened).length;
+            if (unopened > 0 && !confirm(`${unopened} email(s) haven't been opened yet. Archive & clear anyway?`)) return;
+
+            const entry = {
+                id: makeSentEntryId('msg'),
+                sentAt: new Date().toISOString(),
+                type: 'custom_message',
+                office: '',
+                origin: '',
+                destination: '',
+                referenceNo: '',
+                // Cap the archived body so one huge paste can't push the
+                // sent-log bin past JSONBin's size limit and wedge syncing.
+                additionalDetails: blastEmails[0].body.length > 10000
+                    ? blastEmails[0].body.slice(0, 10000) + '\n\n[... truncated for archive]'
+                    : blastEmails[0].body,
+                requestorEmails: '',
+                cc: blastEmails[0].cc || '',
+                subject: blastEmails[0].subject,
+                sentTo: blastEmails.map(e => ({ company: '', email: e.to, opened: !!e.opened })),
+                requestId: null,
+                originalRequest: null
+            };
+
+            blastEmails = [];
+            clearUnfinishedBlast();
+            renderBlastEmails();
+            const rec = document.getElementById('blastRecipients');
+            if (rec) rec.value = '';
+
+            appendToSentLog([entry]).then(() => loadSentHistory());
+        }
+
+        // Persist generated-but-not-finished blast drafts across reloads,
+        // mirroring the vendor batch behavior.
+        function saveUnfinishedBlast() {
+            try {
+                if (blastEmails.length === 0) {
+                    localStorage.removeItem('unfinishedBlast');
+                    return;
+                }
+                localStorage.setItem('unfinishedBlast', JSON.stringify(blastEmails));
+            } catch (error) {
+                // Restoring nothing is safe; restoring a stale earlier blast
+                // is not — drop the key and warn instead of keeping it.
+                console.error('Could not persist blast drafts:', error);
+                try { localStorage.removeItem('unfinishedBlast'); } catch (e) {}
+                alert('Heads up: these generated emails are too large to save for reload recovery (browser storage is full). Finish or download them before reloading the page, or the list will be lost.');
+            }
+        }
+
+        function clearUnfinishedBlast() {
+            localStorage.removeItem('unfinishedBlast');
+        }
+
+        function restoreUnfinishedBlast() {
+            let saved = null;
+            try { saved = JSON.parse(localStorage.getItem('unfinishedBlast') || 'null'); } catch (e) {}
+            if (!saved || !Array.isArray(saved) || saved.length === 0) return;
+            blastEmails = saved;
+            renderBlastEmails();
+            if (!blastPanelExpanded) toggleBlastPanel(); // make the restored drafts visible
         }
     </script>
     <script>
