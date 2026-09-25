@@ -216,6 +216,30 @@
             background: #e0e0e0;
         }
 
+        /* One-line sync status under the Request Queue header */
+        .queue-status {
+            font-size: 11px;
+            color: #888;
+            margin: -8px 0 10px;
+            min-height: 14px;
+        }
+
+        .queue-status.error {
+            color: #b54708;
+        }
+
+        .request-card.busy {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        .loaded-from-warning {
+            display: block;
+            margin-top: 6px;
+            color: #b54708;
+            font-weight: 600;
+        }
+
         /* Email Generator Panel */
         .form-group {
             margin-bottom: 18px;
@@ -780,11 +804,12 @@
                 </h2>
                 <button class="refresh-btn" onclick="loadRequests()">🔄 Refresh</button>
             </div>
+            <div class="queue-status" id="queueStatus"></div>
 
             <div class="request-queue" id="requestQueue">
                 <div class="empty-queue">
-                    <div class="empty-queue-icon">📭</div>
-                    <p>No pending requests</p>
+                    <div class="empty-queue-icon">⏳</div>
+                    <p>Loading requests…</p>
                 </div>
             </div>
         </div>
@@ -797,6 +822,7 @@
             <div class="loaded-from" id="loadedFrom">
                 <strong>📋 Loaded from request:</strong>
                 <span id="loadedFromText"></span>
+                <span id="loadedFromWarning" class="loaded-from-warning" style="display: none;"></span>
             </div>
 
             <form id="emailForm">
@@ -870,6 +896,7 @@
                     <span class="email-count" id="emailCount">0 emails</span>
                 </h2>
 
+                <div id="batchStaleWarning" class="loaded-from-warning" style="display: none; margin: 0 0 10px;"></div>
                 <div id="batchQueue">
                     <div class="empty-queue" style="padding: 20px;">No emails in batch yet.</div>
                 </div>
@@ -1077,39 +1104,190 @@
             restoreUnfinishedBlast();
         });
 
-        // JSONBin API functions
-        async function fetchRequests() {
+        // ========================================
+        // JSONBin reads (hedged + timed out)
+        // ========================================
+        // JSONBin's response time is very erratic: the same few-KB bin can
+        // answer in half a second or hang for 30s+ (sometimes ending in a
+        // 520/522). One slow request used to stall the whole page, so reads
+        // start a backup request when the first hasn't answered after a few
+        // seconds, use whichever answers first, and abort the rest. A read
+        // that fails fast (network error / 5xx) is retried right away, up to
+        // 3 attempts in all. The large sent-log bin passes { hedge: false }:
+        // it still retries after a failure, but never downloads in parallel.
+        // Writes (PUT) are always sent once.
+        const JSONBIN_HEDGE_AFTER_MS = [3000, 4000]; // attempt 2 after 3s, attempt 3 4s after that
+        const JSONBIN_MAX_ATTEMPTS = JSONBIN_HEDGE_AFTER_MS.length + 1;
+        const JSONBIN_READ_TIMEOUT_MS = 45000;
+
+        function jsonbinRead(binId, options) {
+            const hedge = !(options && options.hedge === false);
+            // One URL per read, shared by its attempts, so the browser can
+            // reuse the CORS preflight between them. (No cache: 'no-store' —
+            // it makes Chrome skip its preflight cache. The unique URL and
+            // the no-cache header already keep responses fresh.)
+            const url = `https://api.jsonbin.io/v3/b/${binId}/latest?timestamp=${Date.now()}`;
+            const maxAttempts = JSONBIN_MAX_ATTEMPTS;
+            return new Promise((resolve, reject) => {
+                const controllers = [];
+                let settled = false;
+                let launched = 0;
+                let failures = 0;
+                let noMoreAttempts = false; // set by a 4xx: don't send new attempts, but let ones in flight finish
+                let hedgeTimer = null;
+                let overallTimer = null;
+
+                const finish = (fn, value) => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(hedgeTimer);
+                    clearTimeout(overallTimer);
+                    controllers.forEach(c => { try { c.abort(); } catch (e) {} });
+                    fn(value);
+                };
+
+                const launch = () => {
+                    clearTimeout(hedgeTimer);
+                    if (settled || noMoreAttempts || launched >= maxAttempts) return;
+                    const n = launched++;
+                    const ctrl = new AbortController();
+                    controllers.push(ctrl);
+                    fetch(url, {
+                        headers: {
+                            'X-Access-Key': JSONBIN_API_KEY,
+                            'Cache-Control': 'no-cache'
+                        },
+                        signal: ctrl.signal
+                    })
+                        .then(response => {
+                            if (!response.ok) {
+                                const error = new Error('GET ' + response.status + ' ' + response.statusText);
+                                // 4xx (bad key, missing bin, rate limit) won't fix itself
+                                // on an immediate retry, so send no further attempts.
+                                error.final = response.status >= 400 && response.status < 500;
+                                throw error;
+                            }
+                            return response.json();
+                        })
+                        .then(data => finish(resolve, data))
+                        .catch(error => {
+                            if (settled) return;
+                            failures++;
+                            if (error.final) noMoreAttempts = true;
+                            if (!noMoreAttempts && launched < maxAttempts) {
+                                launch(); // failed fast (network error / 5xx) — try again now
+                            } else if (failures >= launched) {
+                                finish(reject, error); // nothing left in flight
+                            }
+                        });
+                    if (hedge && launched < maxAttempts) hedgeTimer = setTimeout(launch, JSONBIN_HEDGE_AFTER_MS[n]);
+                };
+
+                overallTimer = setTimeout(() => {
+                    finish(reject, new Error('JSONBin did not respond within ' + (JSONBIN_READ_TIMEOUT_MS / 1000) + 's'));
+                }, JSONBIN_READ_TIMEOUT_MS);
+
+                launch();
+            });
+        }
+
+        // ========================================
+        // Request queue (JSONBin API functions)
+        // ========================================
+
+        // The queue as last read from JSONBin (or the copy saved in this
+        // browser, until the first read lands). The Request Queue panel and
+        // the Lane Lookup dropdown both render from it, and Load fills the
+        // form from it, so opening a request never waits on the network.
+        let requestsCache = null;
+        let requestsCacheIsSaved = false;   // true while showing the saved copy, not a fresh read
+        let queueReadPromise = null;        // in-flight read shared by concurrent callers
+        let queueWriteGen = 0;              // bumped after each write of the queue bin
+        let lastQueueSyncAt = 0;            // when requestsCache last matched the bin (read or write)
+
+        function readSavedRequests() {
+            try {
+                const saved = JSON.parse(localStorage.getItem('rateRequests') || '[]');
+                return Array.isArray(saved) ? saved : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function readQueueFromBin() {
+            const gen = queueWriteGen;
+            return jsonbinRead(JSONBIN_BIN_ID).then(data => {
+                const record = data && data.record;
+                if (!record || typeof record !== 'object') throw new Error('Unexpected response from JSONBin');
+                const requests = record.requests == null ? [] : record.requests;
+                if (!Array.isArray(requests)) throw new Error('Unexpected queue contents in JSONBin');
+                // A read that started before our own last write may predate
+                // it — don't let it put deleted requests back in the cache.
+                if (gen === queueWriteGen) {
+                    try { localStorage.setItem('rateRequests', JSON.stringify(requests)); } catch (e) {}
+                    requestsCache = requests;
+                    requestsCacheIsSaved = false;
+                    lastQueueSyncAt = Date.now();
+                }
+                return requests;
+            });
+        }
+
+        // Concurrent reads (page load, Refresh, the lookup dropdown's ↻) share
+        // one request instead of each hitting JSONBin.
+        function readQueueShared() {
+            if (!queueReadPromise) {
+                const p = readQueueFromBin();
+                queueReadPromise = p;
+                const clear = () => { if (queueReadPromise === p) queueReadPromise = null; };
+                p.then(clear, clear);
+            }
+            return queueReadPromise;
+        }
+
+        // Called after every PUT of the queue bin. Pass the list that was
+        // written, or null if the PUT failed (it may still have landed).
+        function noteQueueWritten(requests) {
+            queueWriteGen++;
+            queueReadPromise = null; // a read already in flight predates this write
+            if (requests) {
+                // Also re-save: a read that landed while the PUT was in flight
+                // may have saved the pre-write list.
+                try { localStorage.setItem('rateRequests', JSON.stringify(requests)); } catch (e) {}
+                requestsCache = requests.slice();
+                requestsCacheIsSaved = false;
+                lastQueueSyncAt = Date.now();
+            }
+        }
+
+        // Pass { strict: true } before writing: it always does its own fresh
+        // read and throws if JSONBin can't be reached, instead of falling back
+        // to the saved copy. Writing back a stale copy would erase requests
+        // the ops team submitted in the meantime.
+        async function fetchRequests(options) {
+            const strict = !!(options && options.strict);
             if (!isJsonBinConfigured) {
-                return JSON.parse(localStorage.getItem('rateRequests') || '[]');
+                return readSavedRequests();
+            }
+
+            if (strict) {
+                return (await readQueueFromBin()).slice();
             }
 
             try {
-                // Add cache-busting parameter and no-cache headers
-                const response = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest?timestamp=${Date.now()}`, {
-                    headers: {
-                        'X-Access-Key': JSONBIN_API_KEY,
-                        'Cache-Control': 'no-cache'
-                    }
-                });
-                if (!response.ok) {
-                    console.error('JSONBin fetch error:', response.status, response.statusText);
-                    return JSON.parse(localStorage.getItem('rateRequests') || '[]');
-                }
-                const data = await response.json();
-                // Sync to localStorage
-                localStorage.setItem('rateRequests', JSON.stringify(data.record.requests || []));
-                return data.record.requests || [];
+                return (await readQueueShared()).slice(); // callers sort/filter their own copy
             } catch (error) {
                 console.error('Error fetching from JSONBin:', error);
-                return JSON.parse(localStorage.getItem('rateRequests') || '[]');
+                return readSavedRequests();
             }
         }
 
         async function saveRequests(requests) {
             // Always save to localStorage as backup
-            localStorage.setItem('rateRequests', JSON.stringify(requests));
+            try { localStorage.setItem('rateRequests', JSON.stringify(requests)); } catch (e) {}
 
             if (!isJsonBinConfigured) {
+                noteQueueWritten(requests);
                 return true;
             }
 
@@ -1125,11 +1303,14 @@
                 });
                 if (!response.ok) {
                     console.error('JSONBin save error:', response.status, response.statusText);
+                    noteQueueWritten(null); // may or may not have landed
                     return false;
                 }
+                noteQueueWritten(requests);
                 return true;
             } catch (error) {
                 console.error('Error saving to JSONBin:', error);
+                noteQueueWritten(null); // may or may not have landed
                 return false;
             }
         }
@@ -1150,25 +1331,30 @@
             localStorage.setItem('sentLogPending', JSON.stringify(entries));
         }
 
+        // The archive list from a sent-log bin read. Throws on anything that
+        // isn't a list, so a garbled response can never be merged into (and
+        // written back over) the real archive as if it were empty.
+        function sentListFrom(data) {
+            const record = data && data.record;
+            if (!record || typeof record !== 'object') throw new Error('Unexpected response from JSONBin');
+            if (record.sent == null && Object.keys(record).length === 0) return []; // brand-new, empty bin
+            if (!Array.isArray(record.sent)) throw new Error('Unexpected sent-log contents in JSONBin');
+            return record.sent;
+        }
+
         async function fetchSentLog() {
             if (!isSentLogConfigured) {
                 return JSON.parse(localStorage.getItem('sentRequestsLog') || '[]');
             }
 
             try {
-                const response = await fetch(`https://api.jsonbin.io/v3/b/${SENT_LOG_BIN_ID}/latest?timestamp=${Date.now()}`, {
-                    headers: {
-                        'X-Access-Key': JSONBIN_API_KEY,
-                        'Cache-Control': 'no-cache'
-                    }
-                });
-                if (!response.ok) {
-                    console.error('Sent log fetch error:', response.status, response.statusText);
-                    return JSON.parse(localStorage.getItem('sentRequestsLog') || '[]');
+                const gen = sentLogWriteGen;
+                const sent = sentListFrom(await jsonbinRead(SENT_LOG_BIN_ID, { hedge: false }));
+                // A read that started before our own flush wrote the bin is
+                // older than the mirror that flush saved — don't overwrite it.
+                if (gen === sentLogWriteGen) {
+                    try { localStorage.setItem('sentRequestsLog', JSON.stringify(sent)); } catch (e) {}
                 }
-                const data = await response.json();
-                const sent = data.record.sent || [];
-                try { localStorage.setItem('sentRequestsLog', JSON.stringify(sent)); } catch (e) {}
                 return sent;
             } catch (error) {
                 console.error('Error fetching sent log:', error);
@@ -1192,6 +1378,8 @@
         // (e.g. two notify clicks in quick succession, or a refresh during a
         // finish) would otherwise race the read-merge-write and drop entries.
         let sentLogFlushChain = Promise.resolve(true);
+        let sentLogJustVerified = null; // { at, list } — archive read back by the last successful flush
+        let sentLogWriteGen = 0;        // bumped after each successful flush PUT
         function flushSentLog() {
             sentLogFlushChain = sentLogFlushChain.then(doFlushSentLog, doFlushSentLog);
             return sentLogFlushChain;
@@ -1218,15 +1406,7 @@
             try {
                 // Re-read the bin right before writing so entries archived from
                 // another machine are merged in, not overwritten.
-                const getResp = await fetch(`https://api.jsonbin.io/v3/b/${SENT_LOG_BIN_ID}/latest?timestamp=${Date.now()}`, {
-                    headers: {
-                        'X-Access-Key': JSONBIN_API_KEY,
-                        'Cache-Control': 'no-cache'
-                    }
-                });
-                if (!getResp.ok) throw new Error('GET ' + getResp.status);
-                const data = await getResp.json();
-                const existing = data.record.sent || [];
+                const existing = sentListFrom(await jsonbinRead(SENT_LOG_BIN_ID, { hedge: false }));
                 const existingIds = new Set(existing.map(e => e.id));
                 let merged = existing.concat(pending.filter(e => !existingIds.has(e.id)));
                 if (merged.length > MAX_SENT_ENTRIES) {
@@ -1244,23 +1424,18 @@
                     body: JSON.stringify({ sent: merged })
                 });
                 if (!putResp.ok) throw new Error('PUT ' + putResp.status);
+                sentLogWriteGen++;
 
                 // JSONBin has no conditional write, so another machine's PUT
                 // can still land between ours and this read-back. Verify what
                 // is actually in the bin and only un-pend entries that made it;
                 // anything clobbered stays pending and is re-merged next flush.
-                const verifyResp = await fetch(`https://api.jsonbin.io/v3/b/${SENT_LOG_BIN_ID}/latest?timestamp=${Date.now()}`, {
-                    headers: {
-                        'X-Access-Key': JSONBIN_API_KEY,
-                        'Cache-Control': 'no-cache'
-                    }
-                });
-                if (!verifyResp.ok) throw new Error('VERIFY ' + verifyResp.status);
-                const landed = (await verifyResp.json()).record.sent || [];
+                const landed = sentListFrom(await jsonbinRead(SENT_LOG_BIN_ID, { hedge: false }));
                 const landedIds = new Set(landed.map(e => e.id));
 
                 try { localStorage.setItem('sentRequestsLog', JSON.stringify(landed)); } catch (e) {}
                 setPendingSentEntries(getPendingSentEntries().filter(e => !landedIds.has(e.id)));
+                sentLogJustVerified = { at: Date.now(), list: landed }; // loadSentHistory can use this instead of reading the bin again
                 return true;
             } catch (error) {
                 console.error('Sent log sync failed (entries kept locally, will retry):', error);
@@ -1268,12 +1443,86 @@
             }
         }
 
+        function setQueueStatus(text, isError) {
+            const el = document.getElementById('queueStatus');
+            if (!el) return;
+            el.textContent = text || '';
+            el.classList.toggle('error', !!isError);
+        }
+
+        function fmtClock(ms) {
+            return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        // Each call supersedes the previous one, so a slow earlier read can't
+        // land late and redraw the queue with older data.
+        let queueLoadSeq = 0;
+
         async function loadRequests() {
+            const seq = ++queueLoadSeq;
+
+            // Show what we already have right away (the list read earlier this
+            // session, or the copy saved by the last visit), then refresh it.
+            if (requestsCache === null) {
+                requestsCache = readSavedRequests();
+                requestsCacheIsSaved = true;
+            }
+            // An empty saved copy may only mean "never loaded in this browser",
+            // so keep the Loading… placeholder for that; any other list —
+            // including an empty queue this page just read or wrote — shows now.
+            const haveList = requestsCache.length > 0 || !requestsCacheIsSaved;
+            if (haveList || !isJsonBinConfigured) {
+                renderRequestQueue(requestsCache);
+            }
+            if (!isJsonBinConfigured) return;
+
+            setQueueStatus(requestsCacheIsSaved && requestsCache.length > 0
+                ? 'Showing the copy saved in this browser — checking JSONBin for updates…'
+                : 'Checking JSONBin for new requests…');
+            const slowTimer = setTimeout(() => {
+                if (seq === queueLoadSeq) {
+                    setQueueStatus('JSONBin is responding slowly — still trying…' +
+                        (haveList ? ' (the list below is the last one we have)' : ''));
+                }
+            }, 8000);
+
+            try {
+                await readQueueShared();
+                if (seq !== queueLoadSeq) return; // a newer refresh has taken over
+                // requestsCache now holds this read — or, if one of our own
+                // writes landed meanwhile, the newer list that was written.
+                renderRequestQueue(requestsCache);
+                setQueueStatus('Up to date as of ' + fmtClock(Date.now()));
+            } catch (error) {
+                if (seq !== queueLoadSeq) return;
+                console.error('Error fetching from JSONBin:', error);
+                if (requestsCache.length > 0 || !requestsCacheIsSaved) {
+                    renderRequestQueue(requestsCache);
+                    setQueueStatus('⚠ JSONBin isn\'t responding — showing the last list we have, which may be out of date. Click Refresh to try again.', true);
+                } else {
+                    document.getElementById('queueCount').textContent = '?';
+                    document.getElementById('requestQueue').innerHTML = `
+                        <div class="empty-queue">
+                            <div class="empty-queue-icon">⚠️</div>
+                            <p>Couldn't load requests</p>
+                            <p style="font-size: 12px; margin-top: 10px;">JSONBin isn't responding right now. Click Refresh to try again.</p>
+                        </div>
+                    `;
+                    setQueueStatus('');
+                }
+            } finally {
+                clearTimeout(slowTimer);
+            }
+        }
+
+        function renderRequestQueue(list) {
             const queueDiv = document.getElementById('requestQueue');
             const countSpan = document.getElementById('queueCount');
+            const requests = list.slice();
 
-            // Load from JSONBin or localStorage
-            const requests = await fetchRequests();
+            // The Lane Lookup dropdown shows the same list (script below).
+            if (typeof renderQueueDropdown === 'function') renderQueueDropdown(list);
+            updateStaleRequestWarnings();
 
             // Sort by urgency (rush first, then urgent, then normal) and then by date
             const urgencyOrder = { rush: 0, urgent: 1, normal: 2 };
@@ -1321,6 +1570,42 @@
             });
 
             queueDiv.innerHTML = html;
+
+            // Keep the loaded request highlighted across refreshes.
+            if (currentRequestId !== null) {
+                const card = document.getElementById(`request-${currentRequestId}`);
+                if (card) card.classList.add('selected');
+            }
+        }
+
+        // Warn if the request loaded into the form, or one already added to
+        // the batch, has since left the queue (e.g. processed from another
+        // machine), so it isn't sent out twice. Only judged against a list
+        // that matches JSONBin, never the saved copy.
+        function updateStaleRequestWarnings() {
+            const fresh = requestsCache !== null && !requestsCacheIsSaved;
+            const inQueue = id => requestsCache.some(r => String(r.id) === String(id));
+
+            const warn = document.getElementById('loadedFromWarning');
+            if (warn) {
+                const gone = fresh && currentRequestId !== null && !inQueue(currentRequestId);
+                warn.textContent = gone
+                    ? '⚠ This request is no longer in the queue — it may already have been processed by someone else.'
+                    : '';
+                warn.style.display = gone ? 'block' : 'none';
+            }
+
+            const batchWarn = document.getElementById('batchStaleWarning');
+            if (batchWarn) {
+                const goneItems = fresh
+                    ? batchQueue.filter(b => b.requestId != null && !inQueue(b.requestId))
+                    : [];
+                batchWarn.textContent = goneItems.length
+                    ? '⚠ No longer in the queue (may already have been processed by someone else): ' +
+                      goneItems.map(b => b.origin + ' → ' + b.destination).join('; ')
+                    : '';
+                batchWarn.style.display = goneItems.length ? 'block' : 'none';
+            }
         }
 
         function selectRequest(id) {
@@ -1330,9 +1615,22 @@
             if (card) card.classList.add('selected');
         }
 
+        let loadRequestSeq = 0;
+
         async function loadRequest(id) {
-            const requests = await fetchRequests();
-            const request = requests.find(r => r.id === id);
+            const seq = ++loadRequestSeq;
+            selectRequest(id);
+
+            // Fill from the list already on screen — no network round trip, so
+            // the form fills instantly, and a slow JSONBin response for an
+            // earlier click can't land afterwards and fill in the wrong request.
+            const findIn = list => (list || []).find(r => String(r.id) === String(id));
+            let request = findIn(requestsCache);
+            if (!request) {
+                const requests = await fetchRequests();
+                if (seq !== loadRequestSeq) return; // another request was opened meanwhile
+                request = findIn(requests);
+            }
 
             if (!request) {
                 alert('Request not found');
@@ -1340,7 +1638,7 @@
             }
 
             // Store current request ID and new fields
-            currentRequestId = id;
+            currentRequestId = request.id;
             currentRequestData = JSON.parse(JSON.stringify(request)); // snapshot for the sent archive
             currentOffice = request.office || '';
             currentReferenceNo = request.referenceNo || '';
@@ -1380,6 +1678,7 @@
             if (request.office) loadedText += ` (${request.office})`;
             if (request.referenceNo) loadedText += ` [${request.referenceNo}]`;
             document.getElementById('loadedFromText').textContent = loadedText;
+            updateStaleRequestWarnings();
             loadedDiv.classList.add('show');
 
             // Highlight in queue
@@ -1390,16 +1689,44 @@
 
             // Scroll to form on mobile
             document.getElementById('emailForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+            // The list the form was filled from may be a while old (a tab left
+            // open, or the saved copy on page load), so re-check the queue in
+            // the background; the warnings above flag a request someone else
+            // has already processed. The form itself is not touched again.
+            if (isJsonBinConfigured && Date.now() - lastQueueSyncAt > 20000) loadRequests();
+        }
+
+        // Removes the given request ids from the queue bin. Re-reads the bin
+        // first so requests submitted since this page loaded are kept, and
+        // writes nothing at all if that read fails. Returns true on success.
+        async function removeRequestsFromQueue(ids) {
+            const idSet = new Set(ids.map(String));
+            let requests;
+            try {
+                requests = await fetchRequests({ strict: true });
+            } catch (error) {
+                console.error('Could not read the queue before deleting — nothing was changed:', error);
+                return false;
+            }
+            const remaining = requests.filter(r => !idSet.has(String(r.id)));
+            if (remaining.length === requests.length) return true; // already gone (e.g. removed on another machine)
+            return saveRequests(remaining);
         }
 
         async function deleteRequest(id) {
             if (!confirm('Delete this request?')) return;
 
-            let requests = await fetchRequests();
-            requests = requests.filter(r => r.id !== id);
-            await saveRequests(requests);
+            const card = document.getElementById(`request-${id}`);
+            if (card) card.classList.add('busy');
+            setQueueStatus('Deleting…');
 
-            if (currentRequestId === id) {
+            const ok = await removeRequestsFromQueue([id]);
+            if (card) card.classList.remove('busy');
+
+            if (!ok) {
+                alert('Couldn\'t delete the request — JSONBin didn\'t respond in time. The queue will reload; if the request is still listed, please try again in a moment.');
+            } else if (String(currentRequestId) === String(id)) {
                 currentRequestId = null;
                 currentRequestData = null;
                 document.getElementById('loadedFrom').classList.remove('show');
@@ -1585,6 +1912,7 @@
         }
 
         function updateBatchDisplay() {
+            updateStaleRequestWarnings();
             const queueDiv = document.getElementById('batchQueue');
             const batchCountSpan = document.getElementById('batchCount');
             const emailCountSpan = document.getElementById('emailCount');
@@ -1901,9 +2229,14 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
 
             if (idsToDelete.length > 0) {
                 if (confirm(`Delete the ${idsToDelete.length} processed request(s) from the queue?`)) {
-                    let requests = await fetchRequests();
-                    requests = requests.filter(r => !idsToDelete.includes(r.id));
-                    await saveRequests(requests);
+                    setQueueStatus('Removing processed requests…');
+                    let removed = await removeRequestsFromQueue(idsToDelete);
+                    while (!removed && confirm(
+                        'Couldn\'t remove the processed request(s) from the queue — JSONBin didn\'t respond in time. ' +
+                        'Your emails and Sent History are not affected.\n\n' +
+                        'Click OK to try again, or Cancel to leave them in the queue (you can delete them with 🗑️ later).')) {
+                        removed = await removeRequestsFromQueue(idsToDelete);
+                    }
                     loadRequests();
                 }
             }
@@ -1988,9 +2321,29 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
             if (btn) btn.innerHTML = sentHistoryExpanded ? '&#9652; Hide' : '&#9662; Show';
         }
 
+        // Each call supersedes the previous one, so a slow earlier read can't
+        // land late and hide entries a newer call has already shown.
+        let sentHistorySeq = 0;
+
         async function loadSentHistory() {
+            const seq = ++sentHistorySeq;
+            // First load: show the copy saved in this browser while the
+            // archive syncs, instead of an empty list.
+            if (sentLogCache.length === 0) {
+                try {
+                    const saved = JSON.parse(localStorage.getItem('sentRequestsLog') || '[]');
+                    if (Array.isArray(saved)) sentLogCache = saved;
+                } catch (e) {}
+                renderSentHistory();
+            }
             await flushSentLog(); // retry anything that failed to sync earlier
-            sentLogCache = await fetchSentLog();
+            if (seq !== sentHistorySeq) return;
+            // A sync that just ran already read the archive back from the bin.
+            const verified = sentLogJustVerified;
+            sentLogJustVerified = null;
+            const list = (verified && Date.now() - verified.at < 10000) ? verified.list : await fetchSentLog();
+            if (seq !== sentHistorySeq) return;
+            sentLogCache = list;
             renderSentHistory();
         }
 
@@ -2201,7 +2554,11 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
             if (btn) btn.innerHTML = blastPanelExpanded ? '&#9652; Hide' : '&#9662; Show';
         }
 
-        async function fetchTemplates() {
+        // Pass { strict: true } before writing: it throws if the bin can't be
+        // read, instead of returning this browser's copy — writing back an
+        // out-of-date copy would erase templates saved on other machines.
+        async function fetchTemplates(options) {
+            const strict = !!(options && options.strict);
             if (!isTemplatesBinConfigured) {
                 return JSON.parse(localStorage.getItem('messageTemplates') || '[]');
             }
@@ -2214,16 +2571,16 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
                 return mirror;
             }
             try {
-                const response = await fetch(`https://api.jsonbin.io/v3/b/${TEMPLATES_BIN_ID}/latest?timestamp=${Date.now()}`, {
-                    headers: { 'X-Access-Key': JSONBIN_API_KEY, 'Cache-Control': 'no-cache' }
-                });
-                if (!response.ok) throw new Error('GET ' + response.status);
-                const data = await response.json();
-                const templates = data.record.templates || [];
+                const data = await jsonbinRead(TEMPLATES_BIN_ID);
+                const record = data && data.record;
+                if (!record || typeof record !== 'object') throw new Error('Unexpected response from JSONBin');
+                const templates = (record.templates == null && Object.keys(record).length === 0) ? [] : record.templates;
+                if (!Array.isArray(templates)) throw new Error('Unexpected templates contents in JSONBin');
                 try { localStorage.setItem('messageTemplates', JSON.stringify(templates)); } catch (e) {}
                 return templates;
             } catch (error) {
                 console.error('Error fetching templates:', error);
+                if (strict) throw error;
                 return JSON.parse(localStorage.getItem('messageTemplates') || '[]');
             }
         }
@@ -2289,7 +2646,13 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
 
             // Fresh snapshot right before writing so templates saved from
             // another machine in the meantime are kept.
-            const templates = await fetchTemplates();
+            let templates;
+            try {
+                templates = await fetchTemplates({ strict: true });
+            } catch (error) {
+                alert(`Couldn't save "${name}" — JSONBin didn't respond, so nothing was changed (saving over an out-of-date copy could erase templates saved on other machines). Please try again in a moment.`);
+                return;
+            }
             const existing = templates.find(t => (t.name || '').toLowerCase() === name.toLowerCase());
             if (existing && !cachedDup && !confirm(`A template named "${existing.name}" was just saved from another machine. Overwrite it?`)) return;
             let savedId;
@@ -2318,7 +2681,13 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
             const t = templatesCache.find(t2 => String(t2.id) === String(id));
             if (!t) return;
             if (!confirm(`Delete the template "${t.name}"? This removes it for everyone using the dashboard.`)) return;
-            const templates = (await fetchTemplates()).filter(t2 => String(t2.id) !== String(id));
+            let templates;
+            try {
+                templates = (await fetchTemplates({ strict: true })).filter(t2 => String(t2.id) !== String(id));
+            } catch (error) {
+                alert(`Couldn't delete "${t.name}" — JSONBin didn't respond, so nothing was changed. Please try again in a moment.`);
+                return;
+            }
             const ok = await saveTemplatesList(templates);
             await refreshTemplateDropdown();
             if (!ok) alert(`"${t.name}" was deleted in this browser — syncing to JSONBin failed but will retry automatically. It may still appear on other machines until then.`);
@@ -2577,17 +2946,18 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
                     if (e.key === 'Enter') { e.preventDefault(); searchLanes(); }
                 });
             });
-            refreshQueueDropdown();
+            // The queue dropdown is filled by renderQueueDropdown() whenever
+            // the Request Queue panel renders (page load included), so there's
+            // no separate JSONBin read here.
         }
 
-        // Populate the "choose request from queue" dropdown using the existing
-        // JSONBin fetch (read-only; same data the Request Queue panel uses).
-        async function refreshQueueDropdown() {
+        // Populate the "choose request from queue" dropdown from the list the
+        // Request Queue panel just rendered (read-only; same data).
+        function renderQueueDropdown(requests) {
             const sel = document.getElementById('queueRequestSelect');
             if (!sel) return;
-            let requests = [];
-            try { requests = await fetchRequests(); } catch (e) { requests = []; }
-            queueRequestsCache = requests || [];
+            const prev = sel.value;
+            queueRequestsCache = (requests || []).slice();
             let opts = '<option value="">\u2014 Select a pending request \u2014</option>';
             queueRequestsCache.forEach(function (r) {
                 let when = '';
@@ -2600,6 +2970,13 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
                 opts += '<option value="' + r.id + '">' + escapeHtml(label) + '</option>';
             });
             sel.innerHTML = opts;
+            // Keep the admin's pick when the list refreshes underneath it.
+            if (prev && queueRequestsCache.some(function (r) { return String(r.id) === prev; })) sel.value = prev;
+        }
+
+        // The ↻ button: re-read the queue (shared with the panel's Refresh).
+        function refreshQueueDropdown() {
+            return loadRequests();
         }
 
         // Chosen from the dropdown: pull the requestor (+ lane/ref/office) and search.
@@ -2818,18 +3195,10 @@ T 1 650 589 2575 | E US.KApex.FCL.Trucking@KLN.COM | THE ONE · IN ASIA | www.k-
             logRatesOnFileNotice(em, false);
         }
 
-        // Keep the queue dropdown in sync with the Request Queue panel. Whenever
-        // loadRequests() runs (initial load, the Refresh button, after a delete or
-        // finishing a batch) the dropdown refreshes too. This only wraps the queue
-        // renderer; the JSONBin API (fetchRequests/saveRequests) is untouched.
-        if (typeof loadRequests === 'function') {
-            const _origLoadRequests = loadRequests;
-            loadRequests = async function () {
-                const result = await _origLoadRequests.apply(this, arguments);
-                try { await refreshQueueDropdown(); } catch (e) {}
-                return result;
-            };
-        }
+        // The queue dropdown stays in sync with the Request Queue panel:
+        // renderRequestQueue() (main script) calls renderQueueDropdown() every
+        // time the panel renders — initial load, Refresh, after a delete or
+        // finishing a batch — from the same list, with no extra JSONBin read.
 
         // Alphabetize the main form's "Origin Location" dropdown. The original
         // script populates it on DOMContentLoaded; this listener runs afterwards
